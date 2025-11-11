@@ -58,8 +58,12 @@ except Exception:
     Image = None  # type: ignore
     _HAS_PIL = False
 
-from .models import PageText, Options
-from .utils import log
+try:
+    from .models import PageText, Options
+    from .utils import log
+except ImportError:  # Script fallback
+    from models import PageText, Options  # type: ignore
+    from utils import log  # type: ignore
 
 
 # --------------------------- Public entry point ---------------------------

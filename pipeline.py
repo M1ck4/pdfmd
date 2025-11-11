@@ -27,11 +27,18 @@ try:
 except Exception:
     fitz = None
 
-from .models import Options
-from .extract import extract_pages
-from .transform import transform_pages
-from .render import render_document
-from .utils import log as default_log
+try:  # Package import (preferred)
+    from .models import Options
+    from .extract import extract_pages
+    from .transform import transform_pages
+    from .render import render_document
+    from .utils import log as default_log
+except ImportError:  # Script-style fallback
+    from models import Options  # type: ignore
+    from extract import extract_pages  # type: ignore
+    from transform import transform_pages  # type: ignore
+    from render import render_document  # type: ignore
+    from utils import log as default_log  # type: ignore
 
 
 DefProgress = Optional[Callable[[int, int], None]]
@@ -115,8 +122,12 @@ def pdf_to_markdown(input_pdf: str, output_md: str, options: Options,
     # --- Stage 3: Render ---
     if log_cb:
         log_cb("[pipeline] Rendering Markdown…")
-    md = render_document(pages_t, options, body_sizes=body_sizes,
-                         progress_cb=lambda d, t: progress_cb and progress_cb(30 + int(d * 60 / t), 100))
+    md = render_document(
+        pages_t,
+        options,
+        body_sizes=body_sizes,
+        progress_cb=lambda d, t: progress_cb and progress_cb(30 + int(d * 60 / t), 100),
+    )
 
     # --- Stage 4: Images (optional) ---
     page_to_rel = _export_images(input_pdf, output_md, options, log_cb=log_cb)

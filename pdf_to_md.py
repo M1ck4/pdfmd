@@ -36,8 +36,7 @@ from pathlib import Path
 from statistics import median
 from typing import List, Dict, Any, Tuple
 
-from hyphenation_reflow_helpers import two_pass_unwrap
-from callout_postprocessor import convert_simple_callouts
+from transform import convert_simple_callouts, two_pass_unwrap
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -460,8 +459,7 @@ def pdf_to_markdown(
     ! Added final post-processing steps:
     ! For more information see...
     ! - `fix_hyphenation()`: Function deactivated to be replaced by less aggressive hyphen unwrap
-    ! - drop-in module `hyphenation_reflow_helpers.py`: Replaces `fix_hyphenation()`
-    ! - drop-in modules `callout_postprocessor.py`:
+    ! - drop-in helpers now live in `transform.py` (see `two_pass_unwrap` & `convert_simple_callouts`)
     
     """
     md = two_pass_unwrap(md, aggressive_hyphen=False, protect_code=True)   # hyphen unwrap + non-sentence reflow (paragraphs preserved)

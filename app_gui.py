@@ -65,6 +65,8 @@ class PdfMdApp(tk.Tk):
         self.defrag_var = tk.BooleanVar(value=True)
         self.orphan_len_var = tk.IntVar(value=45)
         self.heading_ratio_var = tk.DoubleVar(value=1.15)
+        self.aggressive_hyphen_var = tk.BooleanVar(value=False)
+        self.protect_code_var = tk.BooleanVar(value=True)
 
         self._worker: threading.Thread | None = None
 
@@ -118,6 +120,9 @@ class PdfMdApp(tk.Tk):
         ttk.Label(opts, text="Orphan max length").grid(row=2, column=2, sticky="w")
         om = ttk.Spinbox(opts, from_=10, to=120, increment=1, textvariable=self.orphan_len_var, width=6)
         om.grid(row=2, column=3, sticky="w")
+
+        ttk.Checkbutton(opts, text="Aggressive hyphen unwrap", variable=self.aggressive_hyphen_var).grid(row=3, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(opts, text="Protect fenced code blocks", variable=self.protect_code_var).grid(row=3, column=2, columnspan=2, sticky="w")
 
         for c in range(5):
             opts.columnconfigure(c, weight=1)
@@ -194,6 +199,8 @@ class PdfMdApp(tk.Tk):
             remove_headers_footers=self.rm_edges_var.get(),
             insert_page_breaks=self.page_breaks_var.get(),
             export_images=self.export_images_var.get(),
+            aggressive_hyphen=self.aggressive_hyphen_var.get(),
+            protect_code_blocks=self.protect_code_var.get(),
         )
         self._worker = threading.Thread(target=self._run_pipeline, args=(inp, outp, opts), daemon=True)
         self._worker.start()

@@ -58,8 +58,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-defrag", dest="defragment", action="store_false", help="disable orphan defragment")
     p.set_defaults(defragment=True)
 
-    p.add_argument("--heading-ratio", type=float, default=1.15, help="≥ body × ratio → heading (default: 1.15)")
-    p.add_argument("--orphan-len", type=int, default=45, help="max length (chars) of orphan to merge (default: 45)")
+    p.add_argument("--heading-ratio", type=float, default=1.15, help="= body x ratio -> heading (default: 1.15)")
+    p.add_argument("--orphan-max-len", "--orphan-len", dest="orphan_max_len", type=int, default=45,
+                   help="max length (chars) of orphan to merge (default: 45)")
+
+    p.add_argument("--aggressive-hyphen", action="store_true",
+                   help="unwrap TitleCase hyphenation too (joins more words)")
+    p.add_argument("--no-protect-code-blocks", dest="protect_code_blocks", action="store_false",
+                   help="allow unwrap/reflow inside fenced code blocks")
+    p.set_defaults(protect_code_blocks=True)
 
     p.add_argument("--quiet", action="store_true", help="suppress log output")
     p.add_argument("--no-progress", action="store_true", help="suppress progress bar")
@@ -85,10 +92,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         caps_to_headings=bool(args.caps_to_headings),
         defragment_short=bool(args.defragment),
         heading_size_ratio=float(args.heading_ratio),
-        orphan_max_len=int(args.orphan_len),
+        orphan_max_len=int(args.orphan_max_len),
         remove_headers_footers=not bool(args.keep_edges),
         insert_page_breaks=bool(args.page_breaks),
         export_images=bool(args.export_images),
+        aggressive_hyphen=bool(args.aggressive_hyphen),
+        protect_code_blocks=bool(args.protect_code_blocks),
     )
 
     def log_cb(msg: str):

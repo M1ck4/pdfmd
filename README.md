@@ -31,7 +31,7 @@ All processing happens **locally on your computer**, meaning your PDFs, research
 ## ✨ Highlights
 
 * ✅ Converts both text-based and scanned PDFs to Markdown
-* 🧠 AI-style text reconstruction — smart heading detection & paragraph logic
+* 🧠 AI-style text reconstruction - smart heading detection & paragraph logic (now with inline hyphen unwrap + callouts during rendering)
 * ⚙️ Modular design for maintainability and future expansion
 * 🧩 OCR via **Tesseract** (Windows) or **OCRmyPDF** (macOS/Linux)
 * 💡 Configurable from GUI or CLI
@@ -139,6 +139,8 @@ python cli.py input.pdf --ocr auto --export-images
 | `--remove-headers`          | Remove repeating headers/footers           |           |            |                   |
 | `--heading-size-ratio 1.15` | Font-size multiplier for heading detection |           |            |                   |
 | `--orphan-max-len 45`       | Maximum characters for orphan merging      |           |            |                   |
+| `--aggressive-hyphen`       | Merge TitleCase hyphenation aggressively   |           |            |                   |
+| `--no-protect-code-blocks`  | Allow unwrap/reflow inside fenced code     |           |            |                   |
 
 ---
 

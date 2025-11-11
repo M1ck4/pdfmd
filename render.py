@@ -17,9 +17,24 @@ import re
 from statistics import median
 from typing import List, Optional, Callable
 
-from .models import PageText, Block, Line, Span, Options
-from .utils import normalize_punctuation, linkify_urls, escape_markdown
-from .transform import is_all_caps_line, is_mostly_caps
+try:
+    from .models import PageText, Block, Line, Span, Options
+    from .utils import normalize_punctuation, linkify_urls, escape_markdown
+    from .transform import (
+        is_all_caps_line,
+        is_mostly_caps,
+        two_pass_unwrap,
+        convert_simple_callouts,
+    )
+except ImportError:  # Script fallback
+    from models import PageText, Block, Line, Span, Options  # type: ignore
+    from utils import normalize_punctuation, linkify_urls, escape_markdown  # type: ignore
+    from transform import (  # type: ignore
+        is_all_caps_line,
+        is_mostly_caps,
+        two_pass_unwrap,
+        convert_simple_callouts,
+    )
 
 # ------------------------------- Inline wraps -------------------------------
 
@@ -193,6 +208,14 @@ def render_document(pages: List[PageText], options: Options, body_sizes: Optiona
 
     md = "\n".join(md_lines)
     md = re.sub(r"\n{3,}", "\n\n", md).strip() + "\n"
+
+    md = two_pass_unwrap(
+        md,
+        aggressive_hyphen=options.aggressive_hyphen,
+        protect_code=options.protect_code_blocks,
+        non_breaking_abbrevs=options.non_breaking_abbrevs,
+    )
+    md = convert_simple_callouts(md, callout_map=options.callout_map)
 
     if options.defragment_short:
         md = _defragment_orphans(md, max_len=options.orphan_max_len)
