@@ -14,27 +14,17 @@ Main entry: `render_document(pages, options, body_sizes=None, progress_cb=None)`
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from statistics import median
-from typing import List, Optional, Callable
+from typing import Callable, List, Optional
 
-try:
+try:  # package-style imports
     from .models import PageText, Block, Line, Span, Options
-    from .utils import normalize_punctuation, linkify_urls, escape_markdown
-    from .transform import (
-        is_all_caps_line,
-        is_mostly_caps,
-        two_pass_unwrap,
-        convert_simple_callouts,
-    )
-except ImportError:  # Script fallback
+    from .transform import is_all_caps_line, is_mostly_caps
+except Exception:  # script fallback
     from models import PageText, Block, Line, Span, Options  # type: ignore
-    from utils import normalize_punctuation, linkify_urls, escape_markdown  # type: ignore
-    from transform import (  # type: ignore
-        is_all_caps_line,
-        is_mostly_caps,
-        two_pass_unwrap,
-        convert_simple_callouts,
-    )
+    from transform import is_all_caps_line, is_mostly_caps  # type: ignore
+
 
 # ------------------------------- Inline wraps -------------------------------
 
@@ -66,24 +56,53 @@ def _unwrap_hard_breaks(lines: List[str]) -> str:
             out.append(" ".join(buf).strip())
             buf.clear()
 
-    for raw in lines:
-        line = raw.rstrip("\n")
-        if not line.strip():
+    for ln in lines:
+        s = ln.rstrip("\n")
+        if s.strip():
+            buf.append(s)
+        else:
             flush()
             out.append("")
-            continue
-        if line.endswith("  "):
-            buf.append(line.rstrip())
-            flush()
-        else:
-            buf.append(line.strip())
     flush()
     return "\n".join(out)
 
 
-def _defragment_orphans(md: str, max_len: int = 45) -> str:
-    lines = md.splitlines()
-    res = []
+def normalize_punctuation(text: str) -> str:
+    # light normalization for common Unicode punctuation that maps to ASCII
+    text = text.replace("\u2013", "-")  # en dash
+    text = text.replace("\u2014", "-")  # em dash
+    text = text.replace("\u00A0", " ")  # NBSP → space
+    return text
+
+
+def linkify_urls(text: str) -> str:
+    # naive URL linker; avoids touching existing Markdown links
+    url_re = re.compile(r"(?<!\]\()(https?://[^\s)]+)")
+    return url_re.sub(r"<\1>", text)
+
+
+# --------------------------- Lists & bullets tweaks ---------------------------
+
+_BULLET = re.compile(r"^\s*[•·]\s+")
+_NUM = re.compile(r"^\s*(\d+)[\.)]\s+")
+
+
+def _normalize_list_line(ln: str) -> str:
+    ln = _BULLET.sub("- ", ln)
+    m = _NUM.match(ln)
+    if m:
+        num = m.group(1)
+        return re.sub(r"^\s*\d+[\.)]\s+", f"{num}. ", ln)
+    if re.match(r"^\s*[A-Za-z][\.)]\s+", ln):
+        return re.sub(r"^\s*[A-Za-z][\.)]\s+", "- ", ln)
+    return ln
+
+
+# ------------------------------ Orphan defragment ------------------------------
+
+def _defragment_orphans(text: str, max_len: int = 45) -> str:
+    lines = text.splitlines()
+    res: List[str] = []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -99,7 +118,7 @@ def _defragment_orphans(md: str, max_len: int = 45) -> str:
             while j >= 0 and not res[j].strip():
                 j -= 1
             if j >= 0:
-                res[j] = (res[j].rstrip() + " " + line.strip()).strip()
+                res[j] = (res[j].strip() + " " + line.strip()).strip()
                 i += 2
                 continue
         res.append(line)
@@ -115,17 +134,17 @@ def _block_to_lines(block: Block, body_size: float, caps_to_headings: bool, head
 
     for line in block.lines:
         spans = line.spans
-        # assemble inline with Markdown escapes and basic style markers
-        texts: List[str] = []
+        # Join spans and wrap bold/italic
+        pieces: List[str] = []
         sizes: List[float] = []
         for sp in spans:
-            t = escape_markdown(sp.text)
-            t = _wrap_inline(t, sp.bold, sp.italic)
-            texts.append(t)
-            if sp.size:
-                sizes.append(float(sp.size))
-        joined = "".join(texts)
-        if joined.strip():
+            text = _wrap_inline(sp.text, sp.bold, sp.italic)
+            pieces.append(text)
+            sizes.append(float(sp.size))
+        joined = "".join(pieces).rstrip()
+        joined = _normalize_list_line(joined)
+        joined = _fix_hyphenation(joined)
+        if joined:
             rendered_lines.append(joined)
             if sizes:
                 line_sizes.append(median(sizes))
@@ -141,35 +160,13 @@ def _block_to_lines(block: Block, body_size: float, caps_to_headings: bool, head
     heading_by_caps = caps_to_headings and (is_all_caps_line(block_text.replace("\n", " ")) or is_mostly_caps(block_text))
 
     if heading_by_size or heading_by_caps:
-        level = 1 if (avg_line_size >= body_size * 1.6) or heading_by_caps else 2
-        single = re.sub(r"\s+", " ", block_text).strip(" -:–—")
-        single = normalize_punctuation(single)
-        return [f"{'#' * level} {single}", ""]
+        # Keep only first line as heading content
+        title = block_text.splitlines()[0].strip()
+        if title:
+            return [f"# {title}", ""]
 
-    # Paragraph(s)
-    para_text = _fix_hyphenation("\n".join(rendered_lines))
-
-    lines: List[str] = []
-    for ln in para_text.splitlines():
-        # bullets
-        if re.match(r"^\s*([•○◦·\-–—])\s+", ln):
-            ln = re.sub(r"^\s*[•○◦·–—-]\s+", "- ", ln)
-            lines.append(ln.strip())
-            continue
-        # numbered lists
-        m_num = re.match(r"^\s*(\d+)[\.)]\s+", ln)
-        if m_num:
-            num = m_num.group(1)
-            ln = re.sub(r"^\s*\d+[\.)]\s+", f"{num}. ", ln)
-            lines.append(ln.strip())
-            continue
-        # lettered outlines → simple bullets
-        if re.match(r"^\s*[A-Za-z][\.)]\s+", ln):
-            ln = re.sub(r"^\s*[A-Za-z][\.)]\s+", "- ", ln)
-            lines.append(ln.strip())
-            continue
-        lines.append(ln)
-
+    # Not a heading → paragraph flow
+    lines = block_text.splitlines()
     para = _unwrap_hard_breaks(lines)
     para = normalize_punctuation(para)
     para = linkify_urls(para)
@@ -190,35 +187,78 @@ def render_document(pages: List[PageText], options: Options, body_sizes: Optiona
         progress_cb: optional progress callback (done, total)
     """
     md_lines: List[str] = []
-    total = len(pages)
 
+    total = len(pages)
     for i, page in enumerate(pages):
-        body = body_sizes[i] if body_sizes and i < len(body_sizes) else 11.0
-        for blk in page.blocks:
-            md_lines.extend(_block_to_lines(
-                blk,
-                body_size=body,
-                caps_to_headings=options.caps_to_headings,
-                heading_size_ratio=options.heading_size_ratio,
-            ))
-        if options.insert_page_breaks and i < total - 1:
-            md_lines.extend(["---", ""])  # page rule
         if progress_cb:
-            progress_cb(i + 1, total)
+            try:
+                progress_cb(i, total)
+            except Exception:
+                pass
+
+        body_size = body_sizes[i] if body_sizes and i < len(body_sizes) else 11.0
+
+        for block in page.blocks:
+            md_lines.extend(
+                _block_to_lines(
+                    block,
+                    body_size=body_size,
+                    caps_to_headings=options.caps_to_headings,
+                    heading_size_ratio=options.heading_size_ratio,
+                )
+            )
+
+        if options.insert_page_breaks:
+            md_lines.append("\n---\n")
+
+    if progress_cb:
+        try:
+            progress_cb(total, total)
+        except Exception:
+            pass
 
     md = "\n".join(md_lines)
     md = re.sub(r"\n{3,}", "\n\n", md).strip() + "\n"
 
-    md = two_pass_unwrap(
-        md,
-        aggressive_hyphen=options.aggressive_hyphen,
-        protect_code=options.protect_code_blocks,
-        non_breaking_abbrevs=options.non_breaking_abbrevs,
-    )
-    md = convert_simple_callouts(md, callout_map=options.callout_map)
-
     if options.defragment_short:
         md = _defragment_orphans(md, max_len=options.orphan_max_len)
+
+    # Apply modern unwrap/reflow passes (respect CLI/GUI toggles)
+    try:
+        from transform import two_pass_unwrap, unwrap_hyphenation, reflow_non_sentence_linebreaks, convert_simple_callouts
+    except Exception:
+        # local fallback
+        from .transform import two_pass_unwrap, unwrap_hyphenation, reflow_non_sentence_linebreaks, convert_simple_callouts  # type: ignore
+
+    unwrap = getattr(options, "unwrap_hyphens", True)
+    reflow  = getattr(options, "reflow_soft_breaks", True)
+    protect = getattr(options, "protect_code_blocks", getattr(options, "protect_code", True))
+    abbrs   = getattr(options, "non_breaking_abbrevs", None)
+
+    if unwrap or reflow:
+        if unwrap and reflow:
+            md = two_pass_unwrap(
+                md,
+                aggressive_hyphen=getattr(options, "aggressive_hyphen", False),
+                protect_code=protect,
+                non_breaking_abbrevs=abbrs,
+            )
+        else:
+            if unwrap:
+                md = unwrap_hyphenation(
+                    md,
+                    aggressive_hyphen=getattr(options, "aggressive_hyphen", False),
+                    protect_code=protect,
+                )
+            if reflow:
+                md = reflow_non_sentence_linebreaks(
+                    md,
+                    protect_code=protect,
+                    non_breaking_abbrevs=abbrs,
+                )
+
+    if getattr(options, "enable_callouts", True):
+        md = convert_simple_callouts(md, callout_map=getattr(options, "callout_map", None))
 
     # Tighten spaces before punctuation
     md = re.sub(r"\s+([,.;:?!])", r"\1", md)
