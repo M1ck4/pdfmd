@@ -12,9 +12,9 @@ Stages:
 
 Notes:
     - `progress_cb` receives (done, total) at a few milestones; GUI can map this
-    to a determinate bar.
+      to a determinate bar.
     - Image references use forward slashes in Markdown (portable across OSes),
-    while all file I/O uses Path/os to be cross‑platform safe.
+      while all file I/O uses Path/os to be cross‑platform safe.
 """
 from __future__ import annotations
 

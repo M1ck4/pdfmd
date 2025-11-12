@@ -20,28 +20,7 @@ not preserved beyond what helps basic heuristics.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
-
-
-# ------------------------------ Defaults ------------------------------
-
-DEFAULT_NON_BREAKING_ABBREVS: Tuple[str, ...] = (
-    # English
-    "e.g.", "i.e.", "vs.", "etc.", "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.",
-    "Sr.", "Jr.", "St.", "No.", "Nos.", "Fig.", "Figs.", "Eq.", "Eqs.",
-    "pp.", "p.",
-    # German
-    "z.B.", "bzw.", "bspw.", "ca.", "usw.", "Nr.", "S.",
-)
-
-DEFAULT_CALLOUT_MAP: Dict[str, str] = {
-    "note": "note",
-    "tip": "tip",
-    "warning": "warning",
-    "example": "example",
-    "caution": "caution",
-    "info": "info",
-}
+from typing import List, Dict, Any, Iterable, Optional, Literal
 
 
 # ---------------------------- Text structures ----------------------------
@@ -189,10 +168,6 @@ class Options:
     heading_size_ratio: float = 1.15
     orphan_max_len: int = 45
     remove_headers_footers: bool = True
-    aggressive_hyphen: bool = False
-    protect_code_blocks: bool = True
-    non_breaking_abbrevs: Tuple[str, ...] = DEFAULT_NON_BREAKING_ABBREVS
-    callout_map: Dict[str, str] = field(default_factory=lambda: DEFAULT_CALLOUT_MAP.copy())
 
     # Rendering / output
     insert_page_breaks: bool = False
@@ -218,6 +193,4 @@ __all__ = [
     "PageText",
     "Options",
     "median_safe",
-    "DEFAULT_NON_BREAKING_ABBREVS",
-    "DEFAULT_CALLOUT_MAP",
 ]
