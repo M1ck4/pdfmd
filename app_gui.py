@@ -28,6 +28,12 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
+# Optional PyMuPDF import for password probing (GUI pre-checks)
+try:
+    import fitz  # type: ignore
+except Exception:  # pragma: no cover - optional
+    fitz = None  # type: ignore
+
 # --- Robust imports: package or script mode ---------------------------------
 try:
     # Package style, e.g. `python -m pdfmd.app_gui`
@@ -818,6 +824,59 @@ class PdfMdApp(tk.Tk):
             self.out_path_var.set(outp)
 
         self._last_output_path = outp
+
+        # --- Password pre-check and dialog (done on main thread) ---
+        pdf_password = None
+        if fitz is not None:
+            try:
+                doc = fitz.open(str(in_path))
+                needs_pass = bool(getattr(doc, "needs_pass", False))
+                if not needs_pass:
+                    doc.close()
+                else:
+                    doc.close()
+                    # Loop until user cancels or provides a correct password
+                    while True:
+                        pwd = simpledialog.askstring(
+                            "Password required",
+                            "This PDF is password protected.\n\n"
+                            "Enter password to convert.\n\n"
+                            "The password is used only in memory and is\n"
+                            "never stored or sent anywhere.",
+                            show="*",
+                            parent=self,
+                        )
+                        if pwd is None:
+                            # Cancel
+                            self._set_status("Conversion cancelled (password required).", kind="info")
+                            self._log("Conversion cancelled before password entry.")
+                            return
+                        pwd = pwd.strip()
+                        if not pwd:
+                            self._set_status("Conversion cancelled (empty password).", kind="info")
+                            self._log("Conversion cancelled: empty password.")
+                            return
+                        # Validate password quickly
+                        try:
+                            doc2 = fitz.open(str(in_path))
+                            ok = bool(doc2.authenticate(pwd))
+                            doc2.close()
+                        except Exception:
+                            ok = False
+                        if ok:
+                            pdf_password = pwd
+                            break
+                        else:
+                            messagebox.showerror(
+                                "Incorrect password",
+                                "The password you entered is incorrect.\n\nPlease try again.",
+                                parent=self,
+                            )
+            except Exception:
+                # If anything goes wrong here, let the pipeline handle errors.
+                pdf_password = None
+
+        # Now proceed with conversion
         self._cancel_requested = False
         self._lock_ui(busy=True)
         self._disable_open_folder_link()
@@ -841,15 +900,15 @@ class PdfMdApp(tk.Tk):
             export_images=self.export_images_var.get(),
         )
 
-        # Run pipeline on a background thread
+        # Run pipeline on a background thread; pass password as ephemeral arg
         self._worker = threading.Thread(
             target=self._run_pipeline,
-            args=(str(in_path), outp, opts),
+            args=(str(in_path), outp, opts, pdf_password),
             daemon=True,
         )
         self._worker.start()
 
-    def _run_pipeline(self, inp: str, outp: str, opts: Options) -> None:
+    def _run_pipeline(self, inp: str, outp: str, opts: Options, pdf_password: str | None) -> None:
         def wrapped_progress(done: int, total: int) -> None:
             if self._cancel_requested:
                 raise UserCancelled("Cancelled by user")
@@ -867,6 +926,7 @@ class PdfMdApp(tk.Tk):
                 opts,
                 progress_cb=wrapped_progress,
                 log_cb=wrapped_log,
+                pdf_password=pdf_password,
             )
         except UserCancelled:
             self._log("Cancelled by user.")
@@ -889,6 +949,8 @@ class PdfMdApp(tk.Tk):
             self.after(0, self._enable_open_folder_link)
         finally:
             self._cancel_requested = False
+            # Best-effort hygiene: drop any reference in this scope
+            pdf_password = None  # type: ignore[assignment]
             self.after(0, lambda: self._lock_ui(busy=False))
 
     # -------------------------------------------------------------- callbacks

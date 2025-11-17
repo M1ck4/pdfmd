@@ -25,7 +25,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 try:
@@ -51,12 +50,95 @@ from .models import PageText, Options
 from .utils import log
 
 
+# ---------------------- Secure PDF open helpers -----------------------
+
+
+def _open_pdf_with_password(pdf_path: str, pdf_password: Optional[str]):
+    """Open a PDF with optional password using PyMuPDF.
+
+    This helper centralizes password handling so that:
+
+    * We never log or persist the password.
+    * We raise clear, consistent errors for CLI / GUI to react to.
+    * We avoid keeping the password around longer than needed.
+    """
+    if fitz is None:  # pragma: no cover - guarded earlier
+        raise RuntimeError("PyMuPDF (fitz) is not installed. Install with: pip install pymupdf")
+
+    # Open the document first; PyMuPDF will tell us if a password is needed.
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as e:  # pragma: no cover - passthrough, handled by caller
+        raise e
+
+    # If the document is encrypted and still needs a password, authenticate.
+    needs_pass = bool(getattr(doc, "needs_pass", False))
+    if needs_pass:
+        if not pdf_password:
+            doc.close()
+            # Message is intentionally simple so other layers can pattern match.
+            raise RuntimeError("Password required to open this PDF.")
+        try:
+            ok = bool(doc.authenticate(pdf_password))
+        except Exception:
+            doc.close()
+            raise RuntimeError("Incorrect PDF password or cannot decrypt.")
+        if not ok:
+            doc.close()
+            raise RuntimeError("Incorrect PDF password or cannot decrypt.")
+
+    return doc
+
+
+def _prepare_ocr_input(pdf_path: str, pdf_password: Optional[str], tmpdir: str) -> str:
+    """Return the path that OCRmyPDF should read from.
+
+    For unencrypted PDFs this is simply *pdf_path*.
+
+    For password-protected PDFs, we do not pass the password to external
+    commands (which could expose it via process listings). Instead we:
+
+    1. Open and decrypt the PDF in-process using PyMuPDF.
+    2. Write a temporary, decrypted copy inside *tmpdir*.
+    3. Return the path to that temporary copy for OCRmyPDF to process.
+
+    The temporary file lives only in the OS temp directory and is deleted
+    together with *tmpdir* once processing completes.
+    """
+    # First try opening the document; this will also validate the password if needed.
+    doc = _open_pdf_with_password(pdf_path, pdf_password)
+    try:
+        needs_pass = bool(getattr(doc, "needs_pass", False))
+        # If no password was required (unencrypted or already openable), we can
+        # safely let OCRmyPDF read the original file directly.
+        if not needs_pass:
+            return pdf_path
+
+        # The document required a password and has now been authenticated.
+        # Create a decrypted temporary copy for OCR.
+        tmp_plain = os.path.join(tmpdir, "decrypted_input.pdf")
+        out_doc = fitz.open()  # new empty document
+        try:
+            out_doc.insert_pdf(doc)
+            out_doc.save(tmp_plain)
+        finally:
+            out_doc.close()
+        return tmp_plain
+    finally:
+        doc.close()
+
+
 # --------------------------- Public entry point ---------------------------
 
 DefProgress = Optional[Callable[[int, int], None]]
 
 
-def extract_pages(pdf_path: str, options: Options, progress_cb: DefProgress = None) -> List[PageText]:
+def extract_pages(
+    pdf_path: str,
+    options: Options,
+    progress_cb: DefProgress = None,
+    pdf_password: Optional[str] = None,
+) -> List[PageText]:
     """Extract pages as PageText according to OCR mode and preview flag.
 
     progress_cb, if provided, is called as (done_pages, total_pages).
@@ -67,25 +149,25 @@ def extract_pages(pdf_path: str, options: Options, progress_cb: DefProgress = No
     mode = (options.ocr_mode or "off").lower()
 
     if mode == "off":
-        return _extract_native(pdf_path, options, progress_cb)
+        return _extract_native(pdf_path, options, progress_cb, pdf_password)
 
     if mode == "auto":
-        if _needs_ocr_probe(pdf_path):
+        if _needs_ocr_probe(pdf_path, pdf_password):
             log("[extract] Auto: scanned PDF detected.")
             if _HAS_TESS and _HAS_PIL and _tesseract_available():
                 log("[extract] Using Tesseract OCR...")
-                return _extract_tesseract(pdf_path, options, progress_cb)
+                return _extract_tesseract(pdf_path, options, progress_cb, pdf_password)
             elif _which("ocrmypdf") and _tesseract_available():
                 log("[extract] Using OCRmyPDF...")
-                return _extract_ocrmypdf_then_native(pdf_path, options, progress_cb)
+                return _extract_ocrmypdf_then_native(pdf_path, options, progress_cb, pdf_password)
             else:
                 log("[extract] WARNING: Scanned PDF detected but no OCR available!")
                 log("[extract] Install Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki")
                 log("[extract] Then run: pip install pytesseract pillow")
                 log("[extract] Falling back to native extraction (may produce poor results).")
-                return _extract_native(pdf_path, options, progress_cb)
+                return _extract_native(pdf_path, options, progress_cb, pdf_password)
         # Otherwise, native path
-        return _extract_native(pdf_path, options, progress_cb)
+        return _extract_native(pdf_path, options, progress_cb, pdf_password)
 
     if mode == "tesseract":
         if not (_HAS_TESS and _HAS_PIL):
@@ -94,7 +176,12 @@ def extract_pages(pdf_path: str, options: Options, progress_cb: DefProgress = No
                 "Install with: pip install pytesseract pillow\n"
                 "And install Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki"
             )
-        return _extract_tesseract(pdf_path, options, progress_cb)
+        if not _tesseract_available():
+            raise RuntimeError(
+                "OCR mode 'tesseract' selected but Tesseract binary is not available on PATH.\n"
+                "Install Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki"
+            )
+        return _extract_tesseract(pdf_path, options, progress_cb, pdf_password)
 
     if mode == "ocrmypdf":
         if not _tesseract_available():
@@ -107,7 +194,7 @@ def extract_pages(pdf_path: str, options: Options, progress_cb: DefProgress = No
                 "OCR mode 'ocrmypdf' selected but ocrmypdf is not installed.\n"
                 "Install with: pip install ocrmypdf"
             )
-        return _extract_ocrmypdf_then_native(pdf_path, options, progress_cb)
+        return _extract_ocrmypdf_then_native(pdf_path, options, progress_cb, pdf_password)
 
     raise ValueError(f"Unknown ocr_mode: {mode!r}")
 
@@ -115,9 +202,14 @@ def extract_pages(pdf_path: str, options: Options, progress_cb: DefProgress = No
 # ------------------------ Native PyMuPDF extraction ----------------------
 
 
-def _extract_native(pdf_path: str, options: Options, progress_cb: DefProgress) -> List[PageText]:
+def _extract_native(
+    pdf_path: str,
+    options: Options,
+    progress_cb: DefProgress,
+    pdf_password: Optional[str] = None,
+) -> List[PageText]:
     """Extract text using PyMuPDF's native text extraction."""
-    doc = fitz.open(pdf_path)
+    doc = _open_pdf_with_password(pdf_path, pdf_password)
     try:
         total = doc.page_count
 
@@ -143,12 +235,17 @@ def _extract_native(pdf_path: str, options: Options, progress_cb: DefProgress) -
 # ------------------------ Tesseract-based OCR path -----------------------
 
 
-def _extract_tesseract(pdf_path: str, options: Options, progress_cb: DefProgress) -> List[PageText]:
+def _extract_tesseract(
+    pdf_path: str,
+    options: Options,
+    progress_cb: DefProgress,
+    pdf_password: Optional[str] = None,
+) -> List[PageText]:
     """Render each page to an image, feed into Tesseract, build PageText."""
     if not (_HAS_TESS and _HAS_PIL):  # pragma: no cover - guarded earlier
         raise RuntimeError("Tesseract/Pillow not available")
 
-    doc = fitz.open(pdf_path)
+    doc = _open_pdf_with_password(pdf_path, pdf_password)
     try:
         total = doc.page_count
 
@@ -174,7 +271,7 @@ def _extract_tesseract(pdf_path: str, options: Options, progress_cb: DefProgress
 
             # Let pytesseract detect layout at word/line level
             data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-            out.append(PageText.from_tesseract(data))
+            out.append(PageText.from_tesseract_data(data))
 
             if progress_cb:
                 progress_cb(i + 1, total)
@@ -187,7 +284,12 @@ def _extract_tesseract(pdf_path: str, options: Options, progress_cb: DefProgress
 # ------------------------ OCRmyPDF + native path -------------------------
 
 
-def _extract_ocrmypdf_then_native(pdf_path: str, options: Options, progress_cb: DefProgress) -> List[PageText]:
+def _extract_ocrmypdf_then_native(
+    pdf_path: str,
+    options: Options,
+    progress_cb: DefProgress,
+    pdf_password: Optional[str] = None,
+) -> List[PageText]:
     """Run OCRmyPDF on a temp copy, then extract using _extract_native.
 
     This allows combining OCR with PyMuPDF's excellent layout-preserving
@@ -201,9 +303,12 @@ def _extract_ocrmypdf_then_native(pdf_path: str, options: Options, progress_cb: 
     with tempfile.TemporaryDirectory(prefix="pdfmd_") as tmp:
         out_pdf = os.path.join(tmp, "ocr.pdf")
 
+        # Decide which file OCRmyPDF should read from (may create a decrypted temp copy).
+        input_for_ocr = _prepare_ocr_input(pdf_path, pdf_password, tmp)
+
         # Build command: --force-ocr ensures OCR even if text exists
         # Removed --skip-text as it conflicts with --force-ocr
-        cmd = [ocrmypdf_bin, "--force-ocr", pdf_path, out_pdf]
+        cmd = [ocrmypdf_bin, "--force-ocr", input_for_ocr, out_pdf]
 
         try:
             log("[extract] Running OCRmyPDF (this may take a while)...")
@@ -238,13 +343,18 @@ def _extract_ocrmypdf_then_native(pdf_path: str, options: Options, progress_cb: 
             raise
 
         # Now that we have OCR'ed PDF, run native extraction on it
-        return _extract_native(out_pdf, options, progress_cb)
+        # The OCR output is never password protected.
+        return _extract_native(out_pdf, options, progress_cb, None)
 
 
 # ----------------------- OCR probe and helpers ----------------------------
 
 
-def _needs_ocr_probe(pdf_path: str, pages_to_check: int = 3) -> bool:
+def _needs_ocr_probe(
+    pdf_path: str,
+    pdf_password: Optional[str] = None,
+    pages_to_check: int = 3,
+) -> bool:
     """Heuristic: determine if PDF is likely scanned and needs OCR.
 
     We consider a PDF "scanned" if:
@@ -253,7 +363,7 @@ def _needs_ocr_probe(pdf_path: str, pages_to_check: int = 3) -> bool:
       3. Low text density relative to page size
     """
     try:
-        doc = fitz.open(pdf_path)
+        doc = _open_pdf_with_password(pdf_path, pdf_password)
     except Exception:
         return False
 
@@ -289,12 +399,13 @@ def _needs_ocr_probe(pdf_path: str, pages_to_check: int = 3) -> bool:
                     except Exception:
                         continue
 
-        # Heuristic thresholds
+        # Very low text and presence of large images suggests scanned
         if text_chars < 100 and scanned_indicators > 0:
             return True
 
-        # Also treat pages with extremely low text relative to page area as scanned
-        if text_chars < 50 * total and scanned_indicators >= total:
+        # Also treat very low text density as scanned
+        avg_text_per_page = text_chars / max(total, 1)
+        if avg_text_per_page < 50 and scanned_indicators > 0:
             return True
 
         return False
@@ -318,23 +429,27 @@ def _tesseract_available() -> bool:
             timeout=5,
         )
         return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
     except Exception:
         return False
 
 
 def _which(cmd: str) -> Optional[str]:
-    """Cross-platform command finder that respects PATH and PATHEXT."""
-    paths = os.environ.get("PATH", "").split(os.pathsep)
-    exts = [""]
+    """Portable `which` implementation.
 
+    Uses shutil.which when available, falls back to a simple PATH scan.
+    """
+    path = shutil.which(cmd)
+    if path:
+        return path
+
+    # Fallback scan
+    exts = [""]  # On Windows PATHEXT is used by shutil.which; we emulate minimal behaviour.
     if os.name == "nt":
-        pathext = os.environ.get("PATHEXT", ".EXE;.BAT;.CMD;.COM")
-        exts.extend(pathext.lower().split(";"))
+        pathext = os.environ.get("PATHEXT", "")
+        exts.extend(ext.strip() for ext in pathext.split(os.pathsep) if ext.strip())
 
-    for path in paths:
-        candidate = os.path.join(path, cmd)
+    for p in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(p, cmd)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
 
