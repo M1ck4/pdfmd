@@ -13,10 +13,8 @@ Included heuristics:
 - Provide ALL-CAPS helpers used by the renderer for heading promotion.
 
 Transform functions return new `PageText` instances (immutability by copy), so
-upstream stages can compare before/after if needed.
+upstream stages can compare before and after if needed.
 """
-
-from __future__ import annotations
 
 from collections import Counter
 from dataclasses import replace
@@ -24,22 +22,39 @@ from typing import List, Optional, Tuple
 import re
 
 from .models import PageText, Block, Line, Span, Options
+from .tables import detect_tables_on_page
+from .equations import annotate_math_on_page
 
 
 # --------------------------- CAPS heuristics ---------------------------
 
 
 def is_all_caps_line(s: str) -> bool:
-    """Return True if a line is *entirely* alphabetic and uppercase.
+    """Return True if a line is entirely alphabetic and all caps.
 
-    Non-letters are ignored when making the decision.
+    We ignore digits and punctuation. Whitespace is stripped at both ends.
     """
-    core = re.sub(r"[^A-Za-z]+", "", s)
-    return bool(core) and core.isupper()
+    s = s.strip()
+    if not s:
+        return False
+
+    letters = [ch for ch in s if ch.isalpha()]
+    if not letters:
+        return False
+
+    return all(ch.isupper() for ch in letters)
 
 
-def is_mostly_caps(s: str, threshold: float = 0.75) -> bool:
-    """Return True if at least `threshold` of alphabetic chars are uppercase."""
+def is_mostly_caps(s: str, threshold: float = 0.7) -> bool:
+    """Return True if a line is mostly capitalized alphabetic characters.
+
+    We count alphabetic characters only and consider the line "mostly caps"
+    if the fraction of uppercase letters is >= `threshold`.
+    """
+    s = s.strip()
+    if not s:
+        return False
+
     letters = [ch for ch in s if ch.isalpha()]
     if not letters:
         return False
@@ -55,7 +70,7 @@ def _line_text(line: Line) -> str:
 
 
 def _first_nonblank_line_text(page: PageText) -> str:
-    """Return the text of the first non-empty line on a page."""
+    """Return the text of the first non empty line on a page."""
     for blk in page.blocks:
         for ln in blk.lines:
             t = _line_text(ln)
@@ -65,7 +80,7 @@ def _first_nonblank_line_text(page: PageText) -> str:
 
 
 def _last_nonblank_line_text(page: PageText) -> str:
-    """Return the text of the last non-empty line on a page."""
+    """Return the text of the last non empty line on a page."""
     for blk in reversed(page.blocks):
         for ln in reversed(blk.lines):
             t = _line_text(ln)
@@ -74,45 +89,109 @@ def _last_nonblank_line_text(page: PageText) -> str:
     return ""
 
 
-# --------------------------- Header/Footer utils ---------------------------
+# ------------------------- Header/footer detection -------------------------
+
+
+_HEADER_SIMILARITY_THRESHOLD = 0.8
+_FOOTER_SIMILARITY_THRESHOLD = 0.8
+
+
+def _normalized_text(s: str) -> str:
+    """Normalize text for header/footer comparison.
+
+    This strips surrounding whitespace, collapses internal whitespace,
+    and lowercases the result.
+    """
+    s = s.strip()
+    if not s:
+        return ""
+    return re.sub(r"\s+", " ", s).lower()
+
+
+def _similarity(a: str, b: str) -> float:
+    """Return a crude similarity score between 0 and 1 for two strings.
+
+    We compute a token-based Jaccard similarity over words, with a small
+    smoothing factor to avoid zero-division.
+    """
+    na = _normalized_text(a)
+    nb = _normalized_text(b)
+    if not na or not nb:
+        return 0.0
+    sa = set(na.split())
+    sb = set(nb.split())
+    inter = len(sa & sb)
+    union = len(sa | sb)
+    if union == 0:
+        return 0.0
+    return inter / union
 
 
 def detect_repeating_edges(
-    pages: List[PageText], min_pages: int = 3
+    pages: List[PageText],
 ) -> Tuple[Optional[str], Optional[str]]:
-    """Detect repeating header/footer lines across pages.
+    """Detect repeating header and footer strings across pages.
 
-    We look at the first and last non-blank line of each page and count exact
-    matches. If a candidate appears on at least `min_pages` pages, we treat it
-    as a header/footer.
+    We look at the first and last non empty line of each page and compute a
+    majority candidate by normalized text. If enough pages share the same
+    normalized header/footer (above similarity threshold), we return the
+    canonical string as the detected header/footer.
 
-    This is intentionally conservative; pattern-based footer cleanup is
-    handled separately in `remove_header_footer`.
+    Returns:
+        (header, footer) where each is either a string or None if no stable
+        pattern could be found.
     """
-    heads: Counter[str] = Counter()
-    tails: Counter[str] = Counter()
+    if not pages:
+        return None, None
+
+    header_candidates: List[str] = []
+    footer_candidates: List[str] = []
 
     for p in pages:
         h = _first_nonblank_line_text(p)
-        t = _last_nonblank_line_text(p)
+        f = _last_nonblank_line_text(p)
         if h:
-            heads[h] += 1
-        if t:
-            tails[t] += 1
+            header_candidates.append(h)
+        if f:
+            footer_candidates.append(f)
 
-    header = next((h for h, c in heads.most_common() if c >= min_pages and h), None)
-    footer = next((t for t, c in tails.most_common() if c >= min_pages and t), None)
+    if len(header_candidates) < 2 and len(footer_candidates) < 2:
+        return None, None
+
+    def _majority(candidates: List[str], threshold: float) -> Optional[str]:
+        if not candidates:
+            return None
+
+        normalized = [_normalized_text(c) for c in candidates if c.strip()]
+        if not normalized:
+            return None
+
+        counts = Counter(normalized)
+        most_common, freq = counts.most_common(1)[0]
+        frac = freq / len(normalized)
+        if frac < threshold:
+            return None
+
+        # Return one original candidate that matches the normalized winner.
+        for c in candidates:
+            if _normalized_text(c) == most_common:
+                return c
+        return None
+
+    header = _majority(header_candidates, _HEADER_SIMILARITY_THRESHOLD)
+    footer = _majority(footer_candidates, _FOOTER_SIMILARITY_THRESHOLD)
     return header, footer
 
 
-# Footer noise patterns for page bottoms
-_FOOTER_DASH_PATTERN = re.compile(r"^[-–—]\s*[-–—]?\s*\d*\s*$")
-_FOOTER_PAGENUM_PATTERN = re.compile(r"^\d+\s*$")
-_FOOTER_PAGE_LABEL_PATTERN = re.compile(r"^Page\s+\d+\s*$", re.IGNORECASE)
+# We also apply a couple of pattern-based cleanups for typical page numbers.
+
+_FOOTER_DASH_PATTERN = re.compile(r"^-+\s*\d+\s*-+$")
+_FOOTER_PAGENUM_PATTERN = re.compile(r"^\d+$")
+_FOOTER_PAGE_LABEL_PATTERN = re.compile(r"^page\s+\d+$", re.IGNORECASE)
 
 
 def _is_footer_noise(text: str) -> bool:
-    """Heuristic for noisy footer/header artifacts at the bottom of a page.
+    """Heuristic for noisy footer or header artifacts at the bottom of a page.
 
     Examples:
         "- - 1"
@@ -135,36 +214,37 @@ def _is_footer_noise(text: str) -> bool:
 def remove_header_footer(
     pages: List[PageText], header: Optional[str], footer: Optional[str]
 ) -> List[PageText]:
-    """Return copies of pages with matching header/footer lines removed.
+    """Return copies of pages with matching header or footer lines removed.
 
     We compare the joined text of each line to the detected strings and also
-    apply some light pattern-based cleanup for common footer artifacts like
-    "- - 1", "Page 2", or bare page numbers near the bottom.
+    apply some light pattern based cleanup for common footer artifacts like
+    "- - 1" or "---- 7 ----".
     """
+    if not pages:
+        return pages
+
+    header_norm = _normalized_text(header) if header else ""
+    footer_norm = _normalized_text(footer) if footer else ""
+
     out_pages: List[PageText] = []
 
     for p in pages:
         new_blocks: List[Block] = []
 
-        for blk_idx, blk in enumerate(p.blocks):
-            num_lines = len(blk.lines)
+        for blk in p.blocks:
             new_lines: List[Line] = []
-
-            for ln_idx, ln in enumerate(blk.lines):
+            for ln in blk.lines:
                 text = _line_text(ln)
+                norm = _normalized_text(text)
 
-                # Exact header/footer match
-                if header and text == header:
+                # Strip header if it matches (or is very close).
+                if header and norm and _similarity(norm, header_norm) >= 0.95:
                     continue
-                if footer and text == footer:
+
+                # Strip footer if it matches (or is noise).
+                if footer and norm and _similarity(norm, footer_norm) >= 0.95:
                     continue
-
-                # Pattern-based footer removal: consider the last few lines
-                # of the last block on the page as candidates.
-                is_last_block = blk_idx == len(p.blocks) - 1
-                is_near_bottom = ln_idx >= max(0, num_lines - 3)
-
-                if is_last_block and is_near_bottom and _is_footer_noise(text):
+                if _is_footer_noise(text):
                     continue
 
                 new_lines.append(ln)
@@ -183,7 +263,7 @@ def remove_header_footer(
 def strip_drop_caps_in_page(page: PageText) -> PageText:
     """Strip obvious decorative drop caps from the start of blocks.
 
-    Heuristic: if the first span in the first *non-blank* line of a block is a
+    Heuristic: if the first span in the first non blank line of a block is a
     single alphabetic character, and its font size is much larger than the
     median size of the rest of the line, we remove it.
     """
@@ -200,40 +280,56 @@ def strip_drop_caps_in_page(page: PageText) -> PageText:
 
         for ln in lines:
             spans = ln.spans
-            if not spans or modified:
+            if not spans:
                 new_lines.append(ln)
                 continue
 
-            first = spans[0]
-            rest = spans[1:]
-            core = first.text
+            # Find first non empty span.
+            first_idx = None
+            for i, sp in enumerate(spans):
+                if sp.text.strip():
+                    first_idx = i
+                    break
 
-            # Only consider obvious single-letter decorative initials
+            if first_idx is None:
+                new_lines.append(ln)
+                continue
+
+            first = spans[first_idx]
+            rest = spans[first_idx + 1 :]
+
             if (
-                core
-                and len(core.strip()) == 1
-                and core.strip().isalpha()
+                len(first.text.strip()) == 1
+                and first.text.strip().isalpha()
+                and first.size > 0
                 and rest
             ):
-                sizes = [sp.size for sp in rest if getattr(sp, "size", 0) > 0]
+                # Compute median size of rest-of-line.
+                sizes = [sp.size for sp in rest if sp.size > 0]
                 if sizes:
                     sizes_sorted = sorted(sizes)
-                    median_idx = len(sizes_sorted) // 2
-                    median_size = (
-                        sizes_sorted[median_idx]
-                        if len(sizes_sorted) % 2
-                        else (sizes_sorted[median_idx - 1] + sizes_sorted[median_idx]) / 2.0
-                    )
-                    if getattr(first, "size", 0) >= median_size * 1.6:
-                        # Drop the decorative span; keep the rest of the line.
-                        new_ln = replace(ln, spans=rest)
+                    mid = len(sizes_sorted) // 2
+                    if len(sizes_sorted) % 2 == 1:
+                        median = sizes_sorted[mid]
+                    else:
+                        median = 0.5 * (
+                            sizes_sorted[mid - 1] + sizes_sorted[mid]
+                        )
+
+                    if first.size >= 1.5 * median:
+                        # Drop-cap detected: remove this span.
+                        new_spans = spans[:first_idx] + rest
+                        new_ln = replace(ln, spans=new_spans)
                         new_lines.append(new_ln)
                         modified = True
                         continue
 
             new_lines.append(ln)
 
-        new_blocks.append(replace(blk, lines=new_lines))
+        if modified:
+            new_blocks.append(replace(blk, lines=new_lines))
+        else:
+            new_blocks.append(blk)
 
     return replace(page, blocks=new_blocks)
 
@@ -243,27 +339,24 @@ def strip_drop_caps(pages: List[PageText]) -> List[PageText]:
     return [strip_drop_caps_in_page(p) for p in pages]
 
 
-# --------------------------- Bullet-line merging ---------------------------
+# --------------------------- Bullet line merging ---------------------------
 
 
 _BULLET_ONLY_PATTERN = re.compile(r"^[•○◦·\-–—]\s*$")
 
 
 def _merge_bullet_lines_in_page(page: PageText) -> PageText:
-    """Merge bullet-only lines with their following text lines.
+    """Merge bullet only lines with their following text lines.
 
     Many PDFs encode bullets as one line containing only "•" and the actual
     item text on the next line:
 
         •
-        First bullet item
 
-    This pass merges such pairs into a single logical line:
+        This is the first bullet item.
 
-        • First bullet item
-
-    This allows the renderer's list-normalisation logic to see the bullet and
-    convert it into proper Markdown list syntax.
+    We instead want a single logical line that starts with "• " followed
+    by the item text.
     """
     new_blocks: List[Block] = []
 
@@ -275,25 +368,39 @@ def _merge_bullet_lines_in_page(page: PageText) -> PageText:
 
         merged_lines: List[Line] = []
         i = 0
+        n = len(lines)
 
-        while i < len(lines):
+        while i < n:
             ln = lines[i]
             text = _line_text(ln)
 
-            # If this line is just a bullet and there is a following line,
-            # merge them into a single line.
-            if _BULLET_ONLY_PATTERN.match(text) and i + 1 < len(lines):
+            if (
+                _BULLET_ONLY_PATTERN.match(text)
+                and i + 1 < n
+                and _line_text(lines[i + 1])
+            ):
+                # Bullet-only line followed by a non-empty line.
+                bullet_span = ln.spans[0] if ln.spans else None
                 nxt = lines[i + 1]
+                if bullet_span is None:
+                    # Fallback: just keep the next line as-is.
+                    merged_lines.append(nxt)
+                    i += 2
+                    continue
+
+                # Prepend bullet span text + a space to the next line's first span.
                 nxt_spans = list(nxt.spans)
-
                 if nxt_spans:
-                    # Ensure there's a space between bullet and first word.
                     first_span = nxt_spans[0]
-                    if not first_span.text.startswith(" "):
-                        first_span = replace(first_span, text=" " + first_span.text)
-                        nxt_spans[0] = first_span
+                    # Preserve style of the next line; only modify text.
+                    bullet_text = bullet_span.text.strip() or "•"
+                    new_text = f"{bullet_text} {first_span.text.lstrip()}"
+                    nxt_spans[0] = replace(first_span, text=new_text)
+                else:
+                    # No spans? Use the bullet span as a single-span line.
+                    nxt_spans = [bullet_span]
 
-                # Combined spans: bullet spans followed by modified next-line spans.
+                # Combined spans: bullet spans followed by modified next line spans.
                 combined_spans = list(ln.spans) + nxt_spans
                 merged_ln = replace(nxt, spans=combined_spans)
                 merged_lines.append(merged_ln)
@@ -317,35 +424,39 @@ def merge_bullet_lines(pages: List[PageText]) -> List[PageText]:
 
 
 def estimate_body_size(pages: List[PageText]) -> List[float]:
-    """Estimate a "body text" font size per page.
+    """Estimate a body text font size per page.
 
-    We collect all non-empty span sizes on each page and take the median.
+    We collect all non empty span sizes on each page and take the median.
     If a page has no spans with a positive size, we fall back to 11.0.
     """
     body_sizes: List[float] = []
 
     for p in pages:
-        sizes: List[float] = []
-        for blk in p.blocks:
-            for ln in blk.lines:
-                for sp in ln.spans:
-                    if getattr(sp, "size", 0) > 0 and (sp.text or "").strip():
-                        sizes.append(float(sp.size))
+        sizes = [
+            sp.size
+            for blk in p.blocks
+            for ln in blk.lines
+            for sp in ln.spans
+            if sp.size > 0 and (sp.text or "").strip()
+        ]
 
-        if sizes:
-            sizes_sorted = sorted(sizes)
-            mid = len(sizes_sorted) // 2
-            if len(sizes_sorted) % 2:
-                body_sizes.append(sizes_sorted[mid])
-            else:
-                body_sizes.append((sizes_sorted[mid - 1] + sizes_sorted[mid]) / 2.0)
-        else:
+        if not sizes:
             body_sizes.append(11.0)
+            continue
+
+        sizes_sorted = sorted(sizes)
+        mid = len(sizes_sorted) // 2
+        if len(sizes_sorted) % 2 == 1:
+            median = sizes_sorted[mid]
+        else:
+            median = 0.5 * (sizes_sorted[mid - 1] + sizes_sorted[mid])
+
+        body_sizes.append(median)
 
     return body_sizes
 
 
-# ----------------------------- High-level pass -----------------------------
+# --------------------------- Main transform API ---------------------------
 
 
 def transform_pages(
@@ -355,13 +466,13 @@ def transform_pages(
 
     Returns:
         pages_t        : transformed pages
-        header, footer : detected repeating header/footer strings (if any)
-        body_sizes     : per-page body-size baselines
+        header, footer : detected repeating header and footer strings (if any)
+        body_sizes     : per page body size baselines
     """
     # 1. Strip decorative drop caps.
     pages_t = strip_drop_caps(pages)
 
-    # 2. Detect repeating header/footer and remove them (if enabled).
+    # 2. Detect repeating header or footer and remove them (if enabled).
     header: Optional[str] = None
     footer: Optional[str] = None
 
@@ -369,10 +480,37 @@ def transform_pages(
         header, footer = detect_repeating_edges(pages_t)
         pages_t = remove_header_footer(pages_t, header, footer)
 
-    # 3. Merge bullet-only lines with following text lines for list detection.
+    # 3. Merge bullet only lines with following text lines for list detection.
     pages_t = merge_bullet_lines(pages_t)
 
-    # 4. Compute per-page body font size baselines for heading promotion.
+    # 4. Detect simple text tables and annotate blocks.
+    annotated_pages: List[PageText] = []
+    for page in pages_t:
+        detections = detect_tables_on_page(page)
+        if not detections:
+            annotated_pages.append(page)
+            continue
+
+        new_blocks: List[Block] = []
+        for idx, blk in enumerate(page.blocks):
+            # Attach table metadata if this block was detected as a table.
+            for det in detections:
+                if det.block_index == idx:
+                    # dynamic attributes; renderer will check these later
+                    setattr(blk, "is_table", True)
+                    setattr(blk, "table_grid", det.grid)
+                    break
+            new_blocks.append(blk)
+
+        annotated_pages.append(replace(page, blocks=new_blocks))
+
+    pages_t = annotated_pages
+
+    # 5. Detect and annotate math equations and expressions.
+    for page in pages_t:
+        annotate_math_on_page(page)
+
+    # 6. Compute per page body font size baselines for heading promotion.
     body_sizes = estimate_body_size(pages_t)
 
     return pages_t, header, footer, body_sizes

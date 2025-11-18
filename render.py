@@ -31,12 +31,17 @@ from .transform import is_all_caps_line, is_mostly_caps
 
 
 def _wrap_inline(text: str, bold: bool, italic: bool) -> str:
-    """Wrap text in Markdown bold/italic markers, if any.
+    """Wrap text with Markdown inline markers for bold/italic.
 
-    Assumes `text` has already been escaped with `escape_markdown`.
+    Rules:
+    - bold + italic: ***text***
+    - bold only: **text**
+    - italic only: *text*
+    - neither: text
     """
-    if not text.strip():
+    if not text:
         return text
+
     if bold and italic:
         return f"***{text}***"
     if bold:
@@ -47,7 +52,7 @@ def _wrap_inline(text: str, bold: bool, italic: bool) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Line / paragraph utilities
+# Line / paragraph shaping
 # ---------------------------------------------------------------------------
 
 
@@ -86,26 +91,29 @@ def _unwrap_hard_breaks(lines: List[str]) -> str:
             out.append("")
             continue
 
+        # Explicit hard break: keep line as-is and terminate paragraph buffer.
         if line.endswith("  "):
-            buf.append(line.rstrip())
+            buf.append(line)
             flush()
-        else:
-            buf.append(line.strip())
+            continue
+
+        buf.append(line)
 
     flush()
     return "\n".join(out)
 
 
 def _defragment_orphans(md: str, max_len: int = 45) -> str:
-    """Merge short orphan lines into the previous paragraph.
+    """Merge short, isolated lines back into the previous paragraph.
 
-    An orphan is:
-    - A non-empty line,
-    - Surrounded by blank lines,
-    - Shorter than or equal to `max_len`,
-    - Not a heading.
+    This operates on the final Markdown string, post-assembly.
 
-    These often come from center titles, section labels, etc.
+    Heuristic:
+    - If a non-heading line is:
+        * sandwiched between blank lines
+        * short (<= max_len chars)
+        * not already a list item,
+      then we append it to the previous non-blank line.
     """
     lines = md.splitlines()
     res: List[str] = []
@@ -138,65 +146,47 @@ def _defragment_orphans(md: str, max_len: int = 45) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Span joining (word-safe)
+# Safe joining & footer detection reuse
 # ---------------------------------------------------------------------------
 
 
 def _safe_join_texts(parts: List[str]) -> str:
-    """Join span texts while preserving word boundaries.
-
-    We inject a space only when concatenating would otherwise merge two
-    alphanumeric characters from adjacent spans (e.g. "Hello" + "world"
-    → "Hello world"). Existing whitespace at boundaries is respected.
-    """
+    """Join adjacent span texts, avoiding accidental double spaces."""
     if not parts:
         return ""
-    out: List[str] = [parts[0]]
-    for t in parts[1:]:
-        if not t:
+    out = [parts[0]]
+    for p in parts[1:]:
+        if not p:
             continue
-        prev = out[-1]
-        prev_last = prev[-1] if prev else ""
-        cur_first = t[0]
-
-        if (
-            prev_last
-            and cur_first
-            and not prev_last.isspace()
-            and not cur_first.isspace()
-            and prev_last.isalnum()
-            and cur_first.isalnum()
-        ):
-            out.append(" " + t)
+        if out[-1].endswith(" ") or p.startswith(" "):
+            out.append(p)
         else:
-            out.append(t)
+            out.append(" " + p)
     return "".join(out)
 
 
-# ---------------------------------------------------------------------------
-# Block → Markdown lines
-# ---------------------------------------------------------------------------
+# Reuse footer noise heuristic from transform-like logic here for line-level cleanup.
+_FOOTER_DASH_PATTERN = re.compile(r"^[-–—]\s*[-–—]?\s*\d*\s*$")
+_FOOTER_PAGENUM_PATTERN = re.compile(r"^\d+\s*$")
+_FOOTER_PAGE_LABEL_PATTERN = re.compile(r"^Page\s+\d+\s*$", re.IGNORECASE)
 
 
-def _is_footer_noise(line: str) -> bool:
-    """Heuristic to detect noisy footer/header artifacts.
-
-    Examples:
-        "- - 1"
-        "- - - - - - 1. 2. 3. 4."
-        "---- 2 ----"
-    """
-    s = line.strip()
+def _is_footer_noise(text: str) -> bool:
+    s = text.strip()
     if not s:
         return False
-
-    # Strong signal: mostly dashes, dots, and digits
-    if re.fullmatch(r"[-\s\.0-9]+", s):
-        # Ensure there's more punctuation than digits/words
-        dash_count = s.count("-")
-        if dash_count >= 2:
-            return True
+    if _FOOTER_DASH_PATTERN.match(s):
+        return True
+    if _FOOTER_PAGENUM_PATTERN.match(s):
+        return True
+    if _FOOTER_PAGE_LABEL_PATTERN.match(s):
+        return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# List normalisation
+# ---------------------------------------------------------------------------
 
 
 def _normalize_list_line(ln: str) -> str:
@@ -222,6 +212,147 @@ def _normalize_list_line(ln: str) -> str:
     return ln.strip()
 
 
+# ---------------------------------------------------------------------------
+# Table rendering
+# ---------------------------------------------------------------------------
+
+
+def _infer_column_alignments(grid: List[List[str]]) -> List[str]:
+    """Return alignment hints per column: 'left', 'right', or 'center'.
+
+    Heuristic:
+    - Look at all body rows (skip header).
+    - If >70% of non-empty cells in a column are numeric-like (including
+      currency / percentages), mark that column as 'right'.
+    - Otherwise default to 'left'.
+    """
+    if not grid or len(grid) < 2:
+        return []
+
+    n_cols = len(grid[0])
+    alignments: List[str] = []
+
+    for col_idx in range(n_cols):
+        numeric_count = 0
+        total_count = 0
+
+        for row in grid[1:]:  # Skip header row
+            if col_idx >= len(row):
+                continue
+            cell = (row[col_idx] or "").strip()
+            if not cell:
+                continue
+            total_count += 1
+
+            # Check if numeric-ish (supports commas, $, %, and simple negatives).
+            clean = (
+                cell.replace(",", "")
+                .replace("$", "")
+                .replace("%", "")
+                .replace("(", "")
+                .replace(")", "")
+            )
+            clean = clean.strip()
+            if clean.startswith("+") or clean.startswith("-"):
+                clean = clean[1:].strip()
+            try:
+                float(clean)
+                numeric_count += 1
+            except ValueError:
+                pass
+
+        if total_count == 0:
+            alignments.append("left")
+        elif numeric_count / total_count > 0.7:
+            alignments.append("right")
+        else:
+            alignments.append("left")
+
+    return alignments
+
+
+def _render_table_block(block: Block) -> List[str]:
+    """Render a table-annotated block (from tables.detect_tables_on_page) as Markdown.
+
+    Expects `block.table_grid` to be a rectangular list-of-lists of strings.
+    The first row is treated as a header row. All cell contents are passed
+    through Markdown escaping and punctuation normalisation, with smart
+    handling of pipe characters so the table stays valid.
+    """
+    grid = getattr(block, "table_grid", None)
+    if not grid:
+        return []
+
+    # Ensure all rows have the same number of columns.
+    n_cols = max((len(row) for row in grid), default=0)
+    if n_cols == 0:
+        return []
+
+    norm_rows: List[List[str]] = []
+    for row in grid:
+        # Pad shorter rows; never truncate content.
+        if len(row) < n_cols:
+            row = row + [""] * (n_cols - len(row))
+        norm_rows.append(row)
+
+    header = norm_rows[0]
+    body = norm_rows[1:]
+
+    def fmt_cell(text: str) -> str:
+        # Treat lone ASCII pipes as border artifacts from old-style tables.
+        raw = (text or "").strip()
+        if raw in {"|", "||", "¦"}:
+            raw = ""
+
+        # Normalise punctuation and escape Markdown specials.
+        raw = normalize_punctuation(raw)
+        raw = escape_markdown(raw)
+
+        # Critical: escape any remaining pipe characters so Markdown does
+        # not misinterpret them as column separators.
+        raw = raw.replace("|", "\\|")
+
+        return raw
+
+    # Infer alignments (left / right) from the data, fallback to left.
+    alignments = _infer_column_alignments(norm_rows)
+    if not alignments or len(alignments) != n_cols:
+        alignments = ["left"] * n_cols
+
+    header_cells = [fmt_cell(c) for c in header]
+    header_line = "| " + " | ".join(header_cells) + " |"
+
+    # Build separator row with alignment markers.
+    separator_cells: List[str] = []
+    for align in alignments:
+        if align == "right":
+            separator_cells.append("---:")
+        elif align == "center":
+            separator_cells.append(":---:")
+        else:
+            separator_cells.append(":---")  # left-align with explicit marker
+
+    separator_line = "| " + " | ".join(separator_cells) + " |"
+
+    body_lines: List[str] = []
+    for row in body:
+        cells = [fmt_cell(c) for c in row]
+        body_lines.append("| " + " | ".join(cells) + " |")
+
+    lines: List[str] = []
+    lines.append(header_line)
+    lines.append(separator_line)
+    lines.extend(body_lines)
+    lines.append("")  # blank line after table
+
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# Block → Markdown lines
+# ---------------------------------------------------------------------------
+
+
 def _block_to_lines(
     block: Block,
     body_size: float,
@@ -238,30 +369,62 @@ def _block_to_lines(
       - average span font size vs body_size
       - optional ALL-CAPS / MOSTLY-CAPS heuristic across the block
     """
+    # Tables: if this block was annotated as a table in transform.py,
+    # render it via the table grid and skip paragraph / heading heuristics.
+    if getattr(block, "is_table", False) and getattr(block, "table_grid", None) is not None:
+        return _render_table_block(block)
+
     rendered_lines: List[str] = []
     raw_lines: List[str] = []
     line_sizes: List[float] = []
 
     for line in block.lines:
         spans = line.spans
-
         texts_fmt: List[str] = []
         texts_raw: List[str] = []
         sizes: List[float] = []
 
-        for sp in spans:
-            raw_text = sp.text or ""
-            texts_raw.append(raw_text)
+        # --- Math-aware path: equations module sets dynamic attributes ---
+        if getattr(line, "is_math", False):
+            kind = getattr(line, "math_kind", "display")
+            tex = (getattr(line, "math_tex", "") or "").strip()
+            if not tex:
+                # Fallback: join raw span text
+                tex = "".join(sp.text or "" for sp in spans)
 
-            esc = escape_markdown(raw_text)
-            esc = _wrap_inline(esc, sp.bold, sp.italic)
-            texts_fmt.append(esc)
+            # Display math: wrap with $$ ... $$ and completely skip
+            # escape_markdown, list detection will treat this as a plain line.
+            if kind == "display":
+                joined_fmt = f"$$\n{tex}\n$$"
+                joined_raw = tex
+                # Do not contribute to heading sizing; leave `sizes` empty.
 
-            if getattr(sp, "size", 0.0):
-                sizes.append(float(sp.size))
+            # Inline math: `tex` is the whole line with math segments already
+            # normalized; we keep it as-is and again skip escape_markdown so
+            # LaTeX commands stay intact.
+            else:  # "inline"
+                joined_fmt = tex
+                joined_raw = tex
+                # Use span sizes for body-size estimation if available.
+                for sp in spans:
+                    if getattr(sp, "size", 0.0):
+                        sizes.append(float(sp.size))
 
-        joined_fmt = _safe_join_texts(texts_fmt)
-        joined_raw = _safe_join_texts(texts_raw)
+        else:
+            # Normal text line: escape Markdown and apply inline bold/italic.
+            for sp in spans:
+                raw_text = sp.text or ""
+                texts_raw.append(raw_text)
+
+                esc = escape_markdown(raw_text)
+                esc = _wrap_inline(esc, sp.bold, sp.italic)
+                texts_fmt.append(esc)
+
+                if getattr(sp, "size", 0.0):
+                    sizes.append(float(sp.size))
+
+            joined_fmt = _safe_join_texts(texts_fmt)
+            joined_raw = _safe_join_texts(texts_raw)
 
         if joined_fmt.strip():
             rendered_lines.append(joined_fmt)
@@ -322,7 +485,7 @@ def _block_to_lines(
             out.append("")
         return out
 
-    # ----------------- Normal paragraph path -----------------
+    # ----------------- Normal paragraph path ----------------------------
 
     para_text = _fix_hyphenation("\n".join(rendered_lines))
 
