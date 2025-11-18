@@ -286,7 +286,6 @@ With tables and equations now modularized, future upgrades can be added easily:
 
 This architecture forms a scalable base for long-term evolution of **pdf_to_md**.
 
-
 ---
 
 ## ⚙️ Installation
