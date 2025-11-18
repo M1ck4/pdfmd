@@ -393,21 +393,157 @@ python cli.py scan.pdf --ocr tesseract --export-images
 python cli.py large.pdf --preview-only
 ```
 
-#### All CLI Options
+# pdfmd Command-Line Help (Improved)
 
-```bash
-python cli.py INPUT_PDF [OPTIONS]
+A fast, local, privacy‑first PDF → Markdown converter with **table reconstruction**, **math‑aware extraction**, **OCR support**, and **password‑protected PDF handling**.
 
-Options:
-  -o, --output PATH        Output Markdown file (default: INPUT.md)
-  --ocr MODE              OCR mode: off|auto|tesseract|ocrmypdf (default: off)
-  --export-images         Export images to _assets/ folder
-  --page-breaks           Insert --- between pages
-  --preview-only          Process only first 3 pages
-  --no-progress           Disable progress bar
-  -q, --quiet             Suppress log messages
-  --version               Print version and exit
+Everything happens **offline on your machine** — no uploads, no telemetry, no tracking.
+
+---
+
+## 🧩 Basic Usage
+
+### --help
+
 ```
+pdfmd --help
+```
+
+Display full usage, options, examples, security notes, and OCR modes.
+
+```
+pdfmd input.pdf
+pdfmd input.pdf -o notes.md
+pdfmd *.pdf --ocr auto --stats
+```
+
+* If you specify a single PDF → output is `input.md`
+* If you specify multiple PDFs → `--output` must be a directory
+* All files are processed locally
+
+---
+
+## 🛠️ Options
+
+### **Output Control**
+
+```
+-o, --output PATH   Output Markdown file, or directory for multiple PDFs
+```
+
+### **OCR Modes**
+
+```
+--ocr off|auto|tesseract|ocrmypdf
+```
+
+* `off` — use native PDF text
+* `auto` — detect scanned pages and OCR only when needed
+* `tesseract` — force page‑by‑page OCR
+* `ocrmypdf` — best layout preservation for scanned books
+
+### **Export Options**
+
+```
+--export-images     Save images to _assets/
+--page-breaks       Insert '---' between pages
+```
+
+### **Workflow Tools**
+
+```
+--preview-only      Convert first few pages only
+--stats             Print words/headings/tables/lists after conversion
+--no-progress       Hide progress bar
+-q, --quiet         Only show errors
+-v, --verbose       More logging (use -vv for debug)
+--no-color          Disable coloured output
+--version           Show application version
+```
+
+---
+
+## 🔐 Password-Protected PDFs
+
+When a PDF is encrypted:
+
+* pdfmd attempts to open it normally
+* If access is denied, you’ll be prompted:
+
+```
+PDF is password protected. Enter password (input will be hidden):
+```
+
+Passwords:
+
+* are never logged
+* are never saved
+* are never passed via command-line arguments
+
+If running in a non-interactive environment (e.g., scripts, cron), secured PDFs are skipped safely.
+
+---
+
+## 📚 Examples
+
+### Convert a report
+
+```
+pdfmd report.pdf
+```
+
+### Specify an output file
+
+```
+pdfmd report.pdf -o summary.md
+```
+
+### Auto-OCR scanned pages
+
+```
+pdfmd scan.pdf --ocr auto
+```
+
+### Force Tesseract OCR and export images
+
+```
+pdfmd book.pdf --ocr tesseract --export-images
+```
+
+### Quick preview of a large document
+
+```
+pdfmd research.pdf --preview-only --stats
+```
+
+### Batch convert multiple PDFs
+
+```
+pdfmd *.pdf --ocr auto -o out_md/
+```
+
+### Quiet mode for automation
+
+```
+pdfmd confidential.pdf --quiet --no-progress
+```
+
+## ✔️ Summary
+
+The `pdfmd` command provides a secure, fast, and highly accurate Markdown exporter designed for:
+
+* Researchers
+* Academics
+* Developers
+* Privacy‑sensitive environments
+* Obsidian and MD‑first workflows
+
+Everything is processed **offline** — your documents stay entirely on your machine.
+
+---
+
+**pdfmd — clean, structured Markdown from any PDF, tables and equations included.**
+
 
 #### Batch Processing
 
