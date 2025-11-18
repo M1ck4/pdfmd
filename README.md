@@ -106,7 +106,7 @@ Perfect for physics, engineering, chemistry, and high‑level mathematics docume
 - **Header/footer removal** — Detects and strips repeating page elements
 - **Multi-column awareness** — Reduces cross-column text mixing
 
-## 📊 Automatic Table Detection & Reconstruction (New)
+## 📊 Automatic Table Detection & Reconstruction
 
 - Column-aligned table detection (2+ spaces)
 - Tab-separated table recognition
@@ -197,20 +197,95 @@ PDF Input
 Markdown Output
 ```
 
-### Module Breakdown
+# 🧠 Module Breakdown
 
-| Module | Purpose |
-|--------|---------|
-| **`extract.py`** | PDF text extraction & OCR orchestration |
-| **`transform.py`** | Text cleaning, header/footer removal, structure analysis |
-| **`render.py`** | Markdown generation with headings, lists, links |
-| **`pipeline.py`** | End-to-end orchestration |
-| **`models.py`** | Data structures (`PageText`, `Block`, `Line`, `Span`, `Options`) |
-| **`utils.py`** | Cross-platform helpers, logging, text utilities |
-| **`app_gui.py`** | Tkinter GUI with themes, profiles, progress tracking |
-| **`cli.py`** | Command-line interface for automation |
+Each module maintains a single responsibility, ensuring the system remains clean, testable, and easy to extend.
 
-**Design Philosophy:** Small modules with single responsibilities — easy to read, test, and extend.
+---
+
+## 📦 Module Overview
+| Module             | Purpose                                                                                                                |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **`extract.py`**   | PDF text extraction, OCR orchestration, structural block formation, encrypted-PDF support                              |
+| **`tables.py`**    | Advanced table detection and Markdown table reconstruction (cell grouping, alignment rows, safety handling)            |
+| **`equations.py`** | Math detection heuristics and conversion to inline/display LaTeX-compatible Markdown                                   |
+| **`transform.py`** | Text cleanup, header/footer removal, block classification, integration of table/math structures into the document flow |
+| **`render.py`**    | Final Markdown generation with headings, lists, links, images, tables, and math rendering                              |
+| **`pipeline.py`**  | End-to-end orchestration: extract → structure → transform → tables → equations → render                                |
+| **`models.py`**    | Typed data structures: `PageText`, `Block`, `TableBlock`, `EquationBlock`, `Line`, `Span`, `Options`                   |
+| **`utils.py`**     | Platform helpers, OCR detection utilities, file handling, temp-file safety, logging tools                              |
+| **`app_gui.py`**   | Tkinter GUI: profiles, theming, progress tracking, encrypted-PDF dialogs                                               |
+| **`cli.py`**       | Command-line interface for batch automation, scripting, and secured password prompts                                   |
+
+---
+
+## 🏗️ Design Philosophy
+
+### ⭐ **Single Responsibility per Module**
+
+Each component focuses on doing *one* thing well:
+
+* extraction
+* structure analysis
+* tables
+* equations
+* transformation
+* rendering
+* user workflow (GUI/CLI)
+
+This eliminates cross-contamination and makes features reliable and testable.
+
+---
+
+## 🔄 Data Flow Overview
+
+```
+PDF → extract.py
+        ↓
+   Raw blocks (text, spans, geometry)
+        ↓
+transform.py
+        ↓
+Structured blocks (paragraphs, lists, headings)
+        ↓
+tables.py
+        ↓
+Table blocks (aligned cells, rows, Markdown pipe tables)
+        ↓
+equations.py
+        ↓
+Equation blocks ($...$ / $$...$$)
+        ↓
+render.py
+        ↓
+Final Markdown output
+```
+
+This modular pipeline allows tables and equations to slot into the flow cleanly, without affecting the behavior of unrelated modules.
+
+---
+
+## 🔍 Why This Matters
+
+* **Researchers** get reliable table conversion.
+* **Academics** get inline and display math suitable for Obsidian, Jupyter, pandoc, and mkdocs.
+* **Developers** get an extensible pipeline where new block types can be added without breaking existing components.
+* **Users** get clearer, more accurate Markdown output without extra configuration.
+
+---
+
+## 🚀 Ready for Future Expansion
+
+With tables and equations now modularized, future upgrades can be added easily:
+
+* better table spanning (row/column spans)
+* math rendering modes (strict, permissive)
+* charts detection
+* diagram extraction
+* semantic tagging for AI/LLM workflows
+
+This architecture forms a scalable base for long-term evolution of **pdf_to_md**.
+
 
 ---
 
