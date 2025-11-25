@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmd"
-version = "1.5.0"
+version = "1.5.1"
 description = "Fast, local, privacy-first PDF to Markdown converter with OCR, table detection, and math support"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "pdfmd contributors"}
+    {name = "Michael Neivandt"}
 ]
 keywords = [
     "pdf", 
