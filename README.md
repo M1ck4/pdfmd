@@ -1,13 +1,13 @@
 # PDF to Markdown Converter (pdfmd)
 
-**A refined, privacy-first desktop and CLI tool that converts PDFs—including scanned documents—into clean, structured Markdown. Built for researchers, professionals, and creators who demand accuracy, speed, and absolute data privacy.**
+**A refined, privacy-first desktop and CLI tool that converts PDFs — including scanned documents — into clean, structured Markdown. Built for researchers, professionals, and creators who demand accuracy, speed, and absolute data privacy.**
 
 **Fast. Local. Intelligent. Fully offline.**
 
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
-![Version](https://img.shields.io/badge/version-1.5.2-purple)
+![Version](https://img.shields.io/badge/version-1.6.0-purple)
 
 ---
 
@@ -49,6 +49,7 @@
 
     * [Launching the GUI](#launching-the-gui)
     * [Quick Workflow](#quick-workflow)
+    * [Batch Conversion](#batch-conversion)
     * [Profiles](#profiles)
     * [Keyboard Shortcuts](#keyboard-shortcuts)
     * [GUI Features](#gui-features)
@@ -125,7 +126,7 @@ Many PDF converters silently upload documents to remote servers. **This tool doe
 * **No cloud processing:** All computation happens locally
 * **No background requests:** Completely offline operation
 
-Every step—extraction, OCR, reconstruction, and rendering—happens **locally on your machine**.
+Every step — extraction, OCR, reconstruction, and rendering — happens **locally on your machine**.
 
 ### Trusted for Sensitive Workflows
 
@@ -159,7 +160,7 @@ Supports all PDF encryption standards: 40-bit RC4, 128-bit RC4, 128/256-bit AES.
 
 - **Smart paragraph reconstruction** — Joins wrapped lines intelligently
 - **Heading inference** — Uses font metrics to detect document structure
-- **Bullet & numbered list detection** — Recognizes various formats (•, ○, -, 1., a., etc.)
+- **Bullet & numbered list detection** — Recognises various formats (•, ○, -, 1., a., etc.)
 - **Hyphenation repair** — Automatically unwraps "hy-\nphen" patterns
 - **URL auto-linking** — Converts plain URLs into clickable Markdown links
 - **Inline formatting** — Preserves **bold** and *italic* styling
@@ -171,7 +172,7 @@ Supports all PDF encryption standards: 40-bit RC4, 128-bit RC4, 128/256-bit AES.
 Your PDFs often contain tables split across blocks, columns, and various layout quirks. The robust table engine handles:
 
 - **Column-aligned tables** — Detects 2+ space separated columns
-- **Bordered tables** — Recognizes explicit `|` and `¦` delimiters
+- **Bordered tables** — Recognises explicit `|` and `¦` delimiters
 - **Tab-separated blocks** — Handles tab-delimited data
 - **Multi-block vertical tables** — Stitches tables split across PyMuPDF blocks
 - **Full Markdown rendering** — Generates proper pipe tables with alignment
@@ -208,6 +209,7 @@ Ideal for scientific PDFs in physics, mathematics, engineering, and chemistry.
 - **Tesseract OCR** — Lightweight, accurate, works on all major platforms
 - **OCRmyPDF** — High-fidelity layout preservation
 - **Auto-detection** — Automatically identifies scanned pages
+- **Language selection** — Choose from 17+ Tesseract language packs or combine them (e.g. `eng+fra`)
 - **Configurable quality** — Balance between speed and accuracy
 - **Mixed-mode support** — Handles PDFs with both digital text and scanned pages
 
@@ -219,7 +221,10 @@ Ideal for scientific PDFs in physics, mathematics, engineering, and chemistry.
 ### 🎨 Modern GUI Experience
 
 - **Dark/Light themes** — Obsidian-style dark mode (default) with instant toggle
-- **Live progress tracking** — Determinate progress bar with full logging
+- **Multi-file batch conversion** — Select and convert multiple PDFs in one go
+- **Safe output naming** — Automatic `_1`, `_2` suffixes prevent accidental overwrites
+- **OCR language selector** — Choose Tesseract language from a dropdown or type a custom code
+- **Live progress tracking** — Determinate progress bar with per-file status in batch mode
 - **Real-time console** — View extraction and conversion logs as they happen
 - **Quick access** — "Open Output Folder" link to finished Markdown
 - **Non-blocking conversion** — Cancel long-running jobs anytime with Esc
@@ -235,7 +240,7 @@ Ideal for scientific PDFs in physics, mathematics, engineering, and chemistry.
 
 ![Dark Mode](doc/Screenshot_dark.png)
 
-*Obsidian-inspired dark theme with purple accents for optimal late-night work sessions.*
+*Obsidian-inspired dark theme with purple accents, grouped options with visual separators, and an integrated progress and log panel.*
 
 **Toggle between themes instantly** — your preference is saved between sessions.
 
@@ -250,7 +255,7 @@ PDF Input
     ↓
 ┌─────────────────┐
 │  1. EXTRACT     │ ← Native PyMuPDF or OCR (Tesseract/OCRmyPDF)
-└─────────────────┘
+└─────────────────┘    with configurable language (--lang)
     ↓
 ┌─────────────────┐
 │  2. TRANSFORM   │ ← Clean text, remove headers/footers, detect structure
@@ -273,16 +278,16 @@ Each module maintains a single responsibility, ensuring the system remains clean
 
 | Module             | Purpose                                                                                                                |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| **`extract.py`**   | PDF text extraction, OCR orchestration, structural block formation, encrypted-PDF support                              |
+| **`extract.py`**   | PDF text extraction, OCR orchestration (with language support), structural block formation, encrypted-PDF support      |
 | **`tables.py`**    | Advanced table detection and Markdown table reconstruction (cell grouping, alignment rows, safety handling)            |
 | **`equations.py`** | Math detection heuristics and conversion to inline/display LaTeX-compatible Markdown                                   |
 | **`transform.py`** | Text cleanup, header/footer removal, block classification, integration of table/math structures into the document flow |
 | **`render.py`**    | Final Markdown generation with headings, lists, links, images, tables, and math rendering                              |
 | **`pipeline.py`**  | End-to-end orchestration: extract → structure → transform → tables → equations → render                                |
-| **`models.py`**    | Typed data structures: `PageText`, `Block`, `Line`, `Span`, `Options`                                                  |
+| **`models.py`**    | Typed data structures: `PageText`, `Block`, `Line`, `Span`, `Options` (including `ocr_lang`)                           |
 | **`utils.py`**     | Platform helpers, OCR detection utilities, file handling, temp-file safety, logging tools                              |
-| **`app_gui.py`**   | Tkinter GUI: profiles, theming, progress tracking, encrypted-PDF dialogs                                               |
-| **`cli.py`**       | Command-line interface for batch automation, scripting, and secured password prompts                                   |
+| **`app_gui.py`**   | Tkinter GUI: multi-file batch conversion, profiles, theming, progress tracking, encrypted-PDF dialogs                  |
+| **`cli.py`**       | Command-line interface for batch automation, scripting, language selection, and secured password prompts               |
 
 ### 🏗️ Design Philosophy
 
@@ -303,7 +308,7 @@ This eliminates cross-contamination and makes features reliable and testable.
 ### 🔄 Data Flow Overview
 
 ```
-PDF → extract.py
+PDF → extract.py (with ocr_lang for Tesseract/OCRmyPDF)
         ↓
    Raw blocks (text, spans, geometry)
         ↓
@@ -324,7 +329,7 @@ render.py
 Final Markdown output
 ```
 
-This modular pipeline allows tables and equations to slot into the flow cleanly, without affecting the behavior of unrelated modules.
+This modular pipeline allows tables and equations to slot into the flow cleanly, without affecting the behaviour of unrelated modules.
 
 ### 🔍 Why This Matters
 
@@ -335,10 +340,12 @@ This modular pipeline allows tables and equations to slot into the flow cleanly,
 
 ### 🚀 Ready for Future Expansion
 
-With tables and equations now modularized, future upgrades can be added easily:
+With tables and equations now modularised, future upgrades can be added easily:
 
 * Better table spanning (row/column spans)
+* Layout-aware table detection using bounding-box coordinates
 * Math rendering modes (strict, permissive)
+* Multi-line header/footer detection
 * Charts detection
 * Diagram extraction
 * Semantic tagging for AI/LLM workflows
@@ -359,7 +366,8 @@ cd pdfmd
 # Install dependencies manually
 pip install pymupdf pillow pytesseract ocrmypdf
 
-# Launch GUI\python -m pdfmd.app_gui
+# Launch GUI
+python -m pdfmd.app_gui
 ```
 
 ### Install as Package (Recommended)
@@ -387,6 +395,7 @@ pdfmd input.pdf
 
    * Download: [https://github.com/UB-Mannheim/tesseract/wiki](https://github.com/UB-Mannheim/tesseract/wiki)
    * Run installer and check "Add to PATH"
+   * For non-English documents, select additional language packs during installation
 
 2. **Install Python packages (if running without the package installer):**
 
@@ -398,13 +407,15 @@ pdfmd input.pdf
 
    ```cmd
    tesseract --version
+   tesseract --list-langs
    ```
 
 #### macOS
 
 ```bash
-# Install Tesseract
+# Install Tesseract (with additional languages if needed)
 brew install tesseract
+brew install tesseract-lang    # all language packs
 
 # Install OCRmyPDF (recommended)
 brew install ocrmypdf
@@ -419,6 +430,9 @@ pip install pymupdf pillow pytesseract ocrmypdf
 # System dependencies
 sudo apt-get update
 sudo apt-get install tesseract-ocr ocrmypdf
+
+# Additional language packs (examples)
+sudo apt-get install tesseract-ocr-deu tesseract-ocr-fra tesseract-ocr-jpn
 
 # Python dependencies
 pip install pymupdf pillow pytesseract ocrmypdf
@@ -452,53 +466,58 @@ python app_gui.py
 
 **Basic Conversion in 7 Steps:**
 
-1. **📂 Select Input PDF**
-   - Click **Browse...** next to "Input PDF"
-   - The path is remembered between sessions
+1. **📂 Select Input PDF(s)**
+   - Click **Browse...** next to "Input PDF(s)"
+   - Select one or multiple PDF files (multi-select supported)
+   - For multiple files, the entry shows the count and first filename
+   - Paths are remembered between sessions
 
 2. **💾 Choose Output Location**
-   - Output path is auto-suggested as `input.md`
+   - **Single file:** Output path is auto-suggested as `input.md`
+   - **Multiple files:** Output defaults to the input folder; Browse opens a folder picker
    - Click **Browse...** to change location
    - Or manually edit the path
 
 3. **⚙️ Select Profile**
    - Choose from built-in profiles:
      - **Default** — Balanced settings for most documents
-     - **Academic article** — Optimized for papers with equations
+     - **Academic article** — Optimised for papers with equations
      - **Slides / handouts** — Image export + page breaks
      - **Scan-heavy / OCR-first** — Force OCR on all pages
    - Or use your custom saved profiles
-  
 
 4. **🔧 Configure Options**
    
-   **OCR Mode:**
-   - `off` — Native text extraction (fastest)
-   - `auto` — Detect scanned pages automatically ✨ recommended
-   - `tesseract` — Force OCR on all pages
-   - `ocrmypdf` — High-quality OCR preprocessing
+   **OCR Settings:**
+   - **OCR mode:**
+     - `off` — Native text extraction (fastest)
+     - `auto` — Detect scanned pages automatically ✨ recommended
+     - `tesseract` — Force OCR on all pages
+     - `ocrmypdf` — High-quality OCR preprocessing
+   - **Language:** Select from 17 common Tesseract language codes or type any valid code. Combine with `+` for multi-language documents (e.g. `eng+fra`).
    
    **Output Options:**
-   - ☑️ **Preview first 3 pages** — Quick test before full conversion
    - ☑️ **Export images** — Save images to `_assets/` folder
    - ☑️ **Insert page breaks** — Add `---` between pages
+   - ☑️ **Preview first 3 pages** — Quick test before full conversion
    
    **Text Processing:**
-   - ☑️ **Remove repeating header/footer** — Auto-detect and strip
+   - ☑️ **Remove repeating header / footer** — Auto-detect and strip
    - ☑️ **Promote CAPS to headings** — Treat ALL CAPS as section titles
    - ☑️ **Defragment short orphans** — Merge isolated short lines
    
    **Fine-Tuning:**
-   - **Heading size ratio** (1.0-2.5) — Font size threshold for headings
-   - **Orphan max length** (10-120) — Character limit for line merging
+   - **Heading size ratio** (1.0–2.5) — Font size threshold for headings
+   - **Orphan max length** (10–120) — Character limit for line merging
 
 5. **▶️ Convert**
-   - Click **Convert → Markdown** button
+   - Click **▶ Convert**
    - Or press **Ctrl+Enter** (keyboard shortcut)
    - The conversion runs in the background
 
 6. **📊 Monitor Progress**
    - Watch the **progress bar** for completion status
+   - For batch conversions, see `[1/5]`, `[2/5]` etc. in the log
    - View **live logs** in the console panel
    - See current status in the status line
    - Press **Stop** or **Esc** to cancel if needed
@@ -506,31 +525,43 @@ python app_gui.py
 7. **✅ Open Output**
    - When complete, click **Open folder** link
    - Opens the output directory in your file manager
-   - Your Markdown file is ready to use!
+   - Your Markdown file(s) are ready to use
+
+#### Batch Conversion
+
+The GUI supports converting multiple PDFs in a single run:
+
+1. **Click Browse** and select multiple PDF files (Ctrl+click or Shift+click)
+2. The input field shows the file count: *"52 files selected, first: report.pdf, +51 more"*
+3. **Output** automatically switches to a folder picker
+4. Each PDF produces its own `<filename>.md` in the output folder
+5. **No accidental overwrites** — if `report.md` already exists, the output is saved as `report_1.md`, `report_2.md`, etc.
+6. Progress scales across all files with per-file log headers
+7. If one file fails, the rest continue; a summary shows successes and failures
 
 #### Profiles
 
 **Built-in Profiles:**
 
 - **Default** — Balanced settings for general documents, auto-detect headers/footers, smart heading detection
-- **Academic article** — Optimized for research papers, higher orphan threshold (60 chars), tighter heading ratio (1.10), OCR mode: `auto`
+- **Academic article** — Optimised for research papers, higher orphan threshold (60 chars), tighter heading ratio (1.10), OCR mode: `auto`
 - **Slides / handouts** — Export images automatically, insert page breaks between slides, disabled header/footer removal, OCR mode: `auto`
 - **Scan-heavy / OCR-first** — Force Tesseract OCR on all pages, no CAPS-to-heading conversion, best for old scanned documents
 
 **Custom Profiles:**
 
 1. Adjust settings to your preference
-2. Click **Save profile...**
+2. Click **Save...**
 3. Enter a profile name
-4. Profile is saved and available for future use
+4. Profile is saved and available for future use (including OCR language)
 
-To delete: Select a custom profile, click **Delete profile**, confirm. (Built-in profiles cannot be deleted)
+To delete: Select a custom profile, click **Delete**, confirm. (Built-in profiles cannot be deleted.)
 
 #### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| **Ctrl+O** | Browse for input PDF |
+| **Ctrl+O** | Browse for input PDF(s) |
 | **Ctrl+Shift+O** | Browse for output location |
 | **Ctrl+Enter** | Start conversion |
 | **Esc** | Stop/cancel conversion |
@@ -540,8 +571,18 @@ To delete: Select a custom profile, click **Delete profile**, confirm. (Built-in
 **🎨 Themes**
 
 Toggle between **Dark** and **Light** themes. Theme preference is saved between sessions.
-- **Dark** — Obsidian-inspired dark mode with deep blacks and purple accents
-- **Light** — Clean light mode with high contrast
+- **Dark** — Obsidian-inspired dark mode with layered panels and purple accents
+- **Light** — Clean light mode with white cards on grey
+
+**🌐 OCR Language**
+
+The language selector next to the OCR mode dropdown lets you choose the Tesseract language for OCR. It comes pre-loaded with 17 common languages:
+
+`eng`, `deu`, `fra`, `spa`, `ita`, `por`, `nld`, `pol`, `rus`, `chi_sim`, `chi_tra`, `jpn`, `kor`, `ara`, `hin`, `tur`, `vie`
+
+The field is editable — type any Tesseract language code directly, or combine languages with `+` (e.g. `eng+deu`). The selected language is saved with your config and profiles.
+
+**Note:** The corresponding Tesseract language pack must be installed on your system for OCR to work in that language.
 
 **🔒 Password Protection**
 
@@ -556,7 +597,7 @@ Password is used in-memory only, never logged or saved to disk, not passed to ex
 
 **⚠️ Cancellation**
 
-Stop a long-running conversion by clicking **Stop** or pressing **Esc**. Current step completes, then conversion stops gracefully.
+Stop a long-running conversion by clicking **Stop** or pressing **Esc**. Current step completes, then conversion stops gracefully. In batch mode, remaining files are skipped.
 
 **📝 Live Logging**
 
@@ -570,11 +611,21 @@ The console panel shows real-time progress:
 [pipeline] Saved → /path/to/output.md
 ```
 
+In batch mode, each file is logged with a numbered header:
+```
+============================================================
+[1/5] report.pdf
+============================================================
+Input:  C:\Documents\report.pdf
+Output: C:\Documents\output\report.md
+...
+```
+
 **💾 Persistent Settings**
 
 Automatically saved between sessions:
 - Last input/output paths
-- Current options and settings
+- Current options and settings (including OCR language)
 - Custom profiles
 - Theme preference
 
@@ -585,26 +636,36 @@ Configuration stored at: `~/.pdfmd_gui.json`
 **Quick Preview:**
 1. Select your PDF
 2. Check **Preview first 3 pages**
-3. Click **Convert**
+3. Click **▶ Convert**
 4. Review output to verify settings
 5. Uncheck preview and run full conversion
 
 **Batch Processing:**
-1. Convert first document with desired settings
-2. Click **Save profile...** with descriptive name
-3. For subsequent documents: Select new input PDF, choose your saved profile, click Convert
+1. Click Browse and select all PDFs to convert
+2. Set output folder (or use the auto-suggested input directory)
+3. Choose your profile and options
+4. Click **▶ Convert** — all files are processed sequentially
+5. Review the batch summary in the log
 
 **Scanned Documents:**
 1. Select scanned PDF
 2. Set OCR mode to **auto** or **tesseract**
-3. Consider enabling **Export images**
-4. Click Convert
-5. Monitor OCR progress in logs (may take several minutes)
+3. Select the correct **Language** for the document
+4. Consider enabling **Export images**
+5. Click **▶ Convert**
+6. Monitor OCR progress in logs (may take several minutes)
+
+**Non-English Documents:**
+1. Select your PDF
+2. Set OCR mode to **auto** or **tesseract**
+3. Choose the appropriate **Language** from the dropdown (e.g. `deu` for German, `jpn` for Japanese)
+4. For mixed-language documents, type a combined code: `eng+fra`
+5. Click **▶ Convert**
 
 **Academic Papers:**
 1. Select **Academic article** profile
 2. Verify settings (OCR: auto, heading ratio: 1.10)
-3. Click Convert
+3. Click **▶ Convert**
 4. Tables and equations are automatically detected and formatted
 
 ---
@@ -635,6 +696,12 @@ pdfmd report.pdf -o notes.md
 # Auto-detect scanned pages and OCR as needed
 pdfmd scan.pdf --ocr auto
 
+# OCR a German document
+pdfmd vertrag.pdf --ocr auto --lang deu
+
+# OCR a mixed English/French document
+pdfmd bilingual.pdf --ocr tesseract --lang eng+fra
+
 # Batch convert multiple PDFs
 pdfmd *.pdf --ocr auto -o converted_md/
 ```
@@ -660,6 +727,9 @@ pdfmd scan.pdf --ocr tesseract
 
 # Use OCRmyPDF for high-quality layout preservation
 pdfmd scan.pdf --ocr ocrmypdf
+
+# OCR with a specific language
+pdfmd japanese_doc.pdf --ocr tesseract --lang jpn
 ```
 
 **🖼️ Documents with Images**
@@ -706,7 +776,7 @@ pdfmd document.pdf -v
 # Debug-level detail (includes pipeline stages)
 pdfmd document.pdf -vv
 
-# Without colored output (for logs)
+# Without coloured output (for logs)
 pdfmd document.pdf -v --no-color
 ```
 
@@ -714,7 +784,7 @@ pdfmd document.pdf -v --no-color
 
 ```
 usage: pdfmd [-h] [-o OUTPUT] [--ocr {off,auto,tesseract,ocrmypdf}]
-             [--export-images] [--page-breaks] [--preview-only]
+             [--lang LANG] [--export-images] [--page-breaks] [--preview-only]
              [--no-progress] [-q] [-v] [--stats] [--no-color] [--version]
              INPUT_PDF [INPUT_PDF ...]
 
@@ -740,6 +810,12 @@ options:
                           tesseract — force page-by-page Tesseract OCR
                           ocrmypdf  — pre-process with OCRmyPDF for high-fidelity layout
   
+  --lang LANG           Tesseract language code(s) for OCR (default: eng).
+                        Use a Tesseract language code, e.g. 'deu' for German,
+                        'fra' for French, 'jpn' for Japanese.
+                        Combine with '+' for multiple: 'eng+fra'.
+                        Only used when --ocr is not 'off'.
+  
   --export-images       Export images to _assets/ folder next to output file,
                         with Markdown image references appended to document.
   
@@ -759,7 +835,7 @@ options:
   --stats               Print document statistics after conversion:
                         word count, headings, tables, lists.
   
-  --no-color            Disable colored terminal output (for log files).
+  --no-color            Disable coloured terminal output (for log files).
   
   --version             Print version and exit.
 ```
@@ -773,14 +849,14 @@ pdfmd *.pdf --ocr auto -o markdown_output/
 
 # Convert with consistent settings
 for pdf in papers/*.pdf; do
-  pdfmd "$pdf" --ocr auto --stats
+  pdfmd "$pdf" --ocr auto --lang eng --stats
 done
 ```
 
 **Tables and Math:**
 ```bash
 # The CLI automatically detects and converts:
-# • Text tables → GitHub-flavored Markdown tables
+# • Text tables → GitHub-flavoured Markdown tables
 # • Unicode math (E = mc², x₁₀², α + β³) → LaTeX-style equations
 # • Existing LaTeX math is preserved
 
@@ -902,7 +978,7 @@ pdfmd scan.pdf --ocr tesseract
 pdfmd scan.pdf --ocr ocrmypdf
 ```
 
-**Batch Optimization:**
+**Batch Optimisation:**
 ```bash
 # Process in parallel (Unix/Linux/macOS):
 ls *.pdf | xargs -n 1 -P 4 pdfmd --ocr auto --quiet
@@ -927,6 +1003,7 @@ else
   exit 1
 fi
 ```
+
 ## API Documentation
 
 For developers wanting to integrate **pdfmd** into their own Python code, a full, detailed API reference is available:
@@ -936,7 +1013,7 @@ For developers wanting to integrate **pdfmd** into their own Python code, a full
 This document covers:
 
 * Programmatic use of `pdf_to_markdown`
-* All `Options` fields and behaviours
+* All `Options` fields and behaviours (including `ocr_lang`)
 * Progress & logging callbacks
 * Advanced / lower-level pipeline access
 * Integration examples (scripts, pandoc, Jupyter)
@@ -946,6 +1023,12 @@ This document covers:
 ## 📊 Configuration Options
 
 ### Key Settings
+
+**OCR Language** (default `eng`)
+- Tesseract language code for OCR
+- Common codes: `eng` (English), `deu` (German), `fra` (French), `jpn` (Japanese), `chi_sim` (Chinese Simplified)
+- Combine with `+` for multi-language: `eng+fra`
+- Requires the corresponding Tesseract language pack to be installed
 
 **Heading Size Ratio** (`1.0` to `2.5`, default `1.15`)
 - Font size multiplier for heading detection
@@ -971,9 +1054,9 @@ This document covers:
 
 Settings saved to: `~/.pdfmd_gui.json`
 
-The GUI persists your last-used options to this config file. The CLI currently uses its own defaults and command-line flags.
+The GUI persists your last-used options to this config file (including OCR language). The CLI currently uses its own defaults and command-line flags.
 
-Safe to edit manually for advanced customization.
+Safe to edit manually for advanced customisation.
 
 To reset GUI settings:
 ```bash
@@ -1007,7 +1090,7 @@ This is a paragraph with hyphenation.
 
 **Improvements:**
 - ✅ Hyphenation repaired (`para-graph` → `paragraph`)
-- ✅ Extra spaces normalized
+- ✅ Extra spaces normalised
 - ✅ Bullets converted to Markdown
 - ✅ Page numbers removed
 - ✅ Heading properly formatted
@@ -1076,6 +1159,8 @@ For integrals: $\int_{0}^{\infty} e^{-x^{2}} dx = \sqrt{\pi}/2$
 find . -name "*.pdf" | parallel -j 4 pdfmd {} --ocr auto
 ```
 
+In the GUI, batch conversion processes files sequentially but with scaled progress tracking and per-file logging.
+
 ### OCR Strategy
 
 **Auto-Detection & Engine Selection:**
@@ -1088,7 +1173,7 @@ find . -name "*.pdf" | parallel -j 4 pdfmd {} --ocr auto
 
 **Scanned PDF Detection:**
 
-The `auto` mode analyzes the first 3 pages for:
+The `auto` mode analyses the first 3 pages for:
 - Text density (< 50 chars/page = likely scanned)
 - Large images covering >30% of page area
 - Combined low text + high image coverage triggers OCR
@@ -1127,15 +1212,23 @@ Or on macOS:
 brew install ocrmypdf
 ```
 
+#### "Error: unsupported colorspace for 'png'" (Image Export)
+
+Fixed in v1.6.0. This occurred when a PDF contained images in CMYK or other non-RGB colourspaces. The image export pipeline now automatically converts all colourspaces to RGB before saving as PNG, and skips any images that still fail rather than aborting the conversion.
+
 #### OCR Output is Poor Quality
 
 1. **Check original scan quality** — Blurry scans won't improve
-2. **Try different OCR mode:**
+2. **Ensure the correct language is selected** — use `--lang` (CLI) or the Language dropdown (GUI)
+3. **Try different OCR mode:**
    ```bash
-   pdfmd scan.pdf --ocr ocrmypdf  # Better than tesseract
+   pdfmd scan.pdf --ocr ocrmypdf --lang deu  # Better than tesseract
    ```
-3. **Ensure Tesseract language data is installed**
-4. **For very poor scans, consider rescanning at higher DPI**
+4. **Ensure Tesseract language data is installed:**
+   ```bash
+   tesseract --list-langs
+   ```
+5. **For very poor scans, consider rescanning at higher DPI**
 
 #### Password Dialog Not Appearing (GUI)
 
@@ -1163,6 +1256,15 @@ python -m pdfmd.cli input.pdf
 ```
 
 ### GUI-Specific Issues
+
+#### GUI Crashes on Startup with AttributeError
+
+Fixed in v1.6.0. This occurred when a saved config file existed from a previous session and triggered theme application before the UI was fully built. The fix adds guards to `_apply_theme()` and `_set_status()` so they safely defer if called before the UI is ready.
+
+To clear a corrupted config:
+```bash
+rm ~/.pdfmd_gui.json
+```
 
 #### Conversion Hangs
 
@@ -1198,7 +1300,7 @@ python -m pdfmd.cli input.pdf
 
 **Problem:** OCR taking too long (>5 minutes for 50 pages)
 
-**Expected Behavior:**
+**Expected Behaviour:**
 - Tesseract: ~1 page/second at 300 DPI
 - OCRmyPDF: ~2-3 seconds/page (includes pre-processing)
 
@@ -1269,7 +1371,7 @@ Built with:
 - **Repository:** https://github.com/M1ck4/pdfmd
 - **Issues:** https://github.com/M1ck4/pdfmd/issues
 - **Releases:** https://github.com/M1ck4/pdfmd/releases
-- **Documentation:** This README and inline code comments
+- **API Reference:** [doc/API.md](https://github.com/M1ck4/pdfmd/blob/main/doc/API.md)
 
 ---
 
@@ -1299,12 +1401,13 @@ We welcome feature requests! Please open an issue with:
 - Enable `--stats` to verify table/equation extraction
 - Preview mode helps dial in heading detection
 - Save custom profiles for different journal formats
+- For non-English papers, set the correct `--lang` for OCR
 
 ### For Legal Professionals
 
 - Always verify password security (in-memory only)
 - Use `--quiet` mode for scripting document workflows
-- Batch processing for discovery documents
+- Batch processing for discovery documents (GUI multi-select or CLI wildcards)
 - Consider splitting very large files first
 
 ### For Developers
@@ -1313,6 +1416,7 @@ We welcome feature requests! Please open an issue with:
 - Each module has clear input/output contracts
 - Add custom profiles via JSON config
 - Hook into pipeline stages for custom processing
+- The `ocr_lang` field on `Options` is passed through to both Tesseract and OCRmyPDF
 
 ### For General Users
 
@@ -1320,6 +1424,7 @@ We welcome feature requests! Please open an issue with:
 - Use preview mode to find optimal settings
 - Save profiles once you find settings you like
 - Keyboard shortcuts speed up workflow significantly
+- Use multi-file selection to batch convert an entire folder in one go
 
 ---
 
