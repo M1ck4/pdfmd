@@ -148,6 +148,18 @@ Security notes:
     )
 
     parser.add_argument(
+        "--lang",
+        default="eng",
+        help=(
+            "Tesseract language code(s) for OCR (default: eng).\n"
+            "Use a Tesseract language code, e.g. 'deu' for German,\n"
+            "'fra' for French, 'jpn' for Japanese.\n"
+            "Combine with '+' for multiple: 'eng+fra'.\n"
+            "Only used when --ocr is not 'off'."
+        ),
+    )
+
+    parser.add_argument(
         "--export-images",
         action="store_true",
         help="Export images to an _assets/ folder and append Markdown references.",
@@ -220,6 +232,7 @@ def _make_options(args: argparse.Namespace) -> Options:
 
     # Extraction / OCR
     opts.ocr_mode = args.ocr
+    opts.ocr_lang = args.lang or "eng"
     opts.preview_only = bool(args.preview_only)
 
     # Rendering / output

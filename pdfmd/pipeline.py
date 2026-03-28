@@ -124,14 +124,31 @@ def _export_images(
             
             for idx, img in enumerate(images, start=1):
                 xref = img[0]
-                pix = fitz.Pixmap(doc, xref)
+                try:
+                    pix = fitz.Pixmap(doc, xref)
+                except Exception as exc:
+                    if log_cb:
+                        log_cb(f"[pipeline] Skipping image xref={xref} on page {pno + 1}: {exc}")
+                    continue
                 
-                # Convert CMYK to RGB if needed
-                if pix.n > 4:
+                # Convert any non-RGB/Gray colorspace (CMYK, ICC, etc.) to RGB.
+                # PNG only supports RGB(A) and Gray(A), so anything else must
+                # be converted before saving.
+                if pix.colorspace and pix.colorspace.n > 3:
                     pix = fitz.Pixmap(fitz.csRGB, pix)
                 
+                # Drop alpha channel if present — avoids issues with some
+                # viewers and keeps file sizes smaller.
+                if pix.alpha:
+                    pix = fitz.Pixmap(pix, 0)  # 0 = drop alpha
+                
                 fname = assets_dir / f"img_{pno + 1:03d}_{idx:02d}.png"
-                pix.save(str(fname))
+                try:
+                    pix.save(str(fname))
+                except Exception as exc:
+                    if log_cb:
+                        log_cb(f"[pipeline] Could not save image p{pno + 1}-{idx}: {exc}")
+                    continue
                 
                 # Markdown wants forward slashes for portability
                 rel = assets_dir.name + "/" + fname.name

@@ -270,7 +270,11 @@ def _extract_tesseract(
             img = Image.open(io.BytesIO(png_bytes))
 
             # Let pytesseract detect layout at word/line level
-            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+            data = pytesseract.image_to_data(
+                img,
+                lang=options.ocr_lang or "eng",
+                output_type=pytesseract.Output.DICT,
+            )
             out.append(PageText.from_tesseract_data(data))
 
             if progress_cb:
@@ -308,7 +312,8 @@ def _extract_ocrmypdf_then_native(
 
         # Build command: --force-ocr ensures OCR even if text exists
         # Removed --skip-text as it conflicts with --force-ocr
-        cmd = [ocrmypdf_bin, "--force-ocr", input_for_ocr, out_pdf]
+        lang = options.ocr_lang or "eng"
+        cmd = [ocrmypdf_bin, "--force-ocr", "-l", lang, input_for_ocr, out_pdf]
 
         try:
             log("[extract] Running OCRmyPDF (this may take a while)...")

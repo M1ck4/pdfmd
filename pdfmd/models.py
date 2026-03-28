@@ -160,6 +160,7 @@ class PageText:
 class Options:
     # Extraction / OCR
     ocr_mode: Literal["off", "auto", "tesseract", "ocrmypdf"] = "off"
+    ocr_lang: str = "eng"
     preview_only: bool = False
 
     # Transform heuristics
