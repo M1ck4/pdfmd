@@ -8,8 +8,11 @@ This API is stable and automatically benefits from engine improvements
 such as:
 
     - OCR-aware extraction (native / auto / Tesseract / OCRmyPDF)
+    - Configurable OCR language (single or combined, e.g. 'eng+fra')
     - Table detection and Markdown table rendering
     - Math-aware normalization and preservation (LaTeX-style)
+    - Multi-file batch conversion with safe output naming
+    - Robust image export with automatic colorspace conversion
 
 Also provides __version__ and a console entry hint so that:
 
@@ -24,8 +27,9 @@ from .pipeline import pdf_to_markdown
 
 __all__ = ["Options", "pdf_to_markdown", "__version__"]
 
-# Semantic version for the "Tables & Math" minor release.
-__version__ = "1.5.1"
+# v1.6.0: OCR language selection, multi-file batch GUI, GUI redesign,
+#          colorspace fix for image export, init-order crash fix.
+__version__ = "1.6.0"
 
 
 def main() -> None:
