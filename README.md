@@ -1,5 +1,7 @@
 # PDF to Markdown Converter (pdfmd)
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 **A refined, privacy-first desktop and CLI tool that converts PDFs — including scanned documents — into clean, structured Markdown. Built for researchers, professionals, and creators who demand accuracy, speed, and absolute data privacy.**
 
 **Fast. Local. Intelligent. Fully offline.**
