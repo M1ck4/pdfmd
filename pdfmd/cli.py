@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence
 
 from .models import Options
+from .ocr_lang import normalize_ocr_lang
 from .pipeline import pdf_to_markdown
 
 
@@ -152,9 +153,9 @@ Security notes:
         default="eng",
         help=(
             "Tesseract language code(s) for OCR (default: eng).\n"
-            "Use a Tesseract language code, e.g. 'deu' for German,\n"
-            "'fra' for French, 'jpn' for Japanese.\n"
-            "Combine with '+' for multiple: 'eng+fra'.\n"
+            "Use a Tesseract language code or a common alias, e.g. 'deu',\n"
+            "'German', '中文', 'chi_sim', 'jpn'.\n"
+            "Combine with '+' for multiple: 'eng+fra' or '中文+english'.\n"
             "Only used when --ocr is not 'off'."
         ),
     )
@@ -219,6 +220,19 @@ Security notes:
         help="Print version and exit.",
     )
 
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Launch the guided interactive CLI.",
+    )
+
+    parser.add_argument(
+        "--ui-lang",
+        choices=["auto", "en", "zh"],
+        default="auto",
+        help="Interactive CLI language (default: auto).",
+    )
+
     return parser
 
 
@@ -232,7 +246,7 @@ def _make_options(args: argparse.Namespace) -> Options:
 
     # Extraction / OCR
     opts.ocr_mode = args.ocr
-    opts.ocr_lang = args.lang or "eng"
+    opts.ocr_lang = normalize_ocr_lang(args.lang or "eng")
     opts.preview_only = bool(args.preview_only)
 
     # Rendering / output
@@ -506,6 +520,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.version:
         print(f"pdfmd {_VERSION}")
         return 0
+
+    if args.interactive or (not args.inputs and sys.stdin.isatty() and sys.stdout.isatty()):
+        from .interactive_cli import run_interactive_cli
+
+        return run_interactive_cli(ui_lang=args.ui_lang)
 
     # NOW check if inputs were provided
     if not args.inputs:
