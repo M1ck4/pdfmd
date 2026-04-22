@@ -162,6 +162,7 @@ def _stitch_vertical(pil_images: List[Image.Image]) -> Image.Image:
     return merged
 
 
+
 def _export_images(
     pdf_path: str,
     output_md: str,
