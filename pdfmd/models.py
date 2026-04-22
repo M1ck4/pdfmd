@@ -171,7 +171,7 @@ class Options:
     remove_headers_footers: bool = True
 
     # Rendering / output
-    insert_page_breaks: bool = False
+    page_break_mode: str = "off"  # "off", "visible", "hidden"
     export_images: bool = False
 
 

@@ -512,25 +512,53 @@ def render_document(
         if progress_cb:
             progress_cb(i + 1, total)
 
-    # Post-process each page independently, then join with page breaks.
-    page_mds: List[str] = []
-    buf: List[str] = []
+    mode = options.page_break_mode
+
+    if mode == "visible":
+        # Per-page post-processing; join with visible "---" separators.
+        page_mds: List[str] = []
+        buf: List[str] = []
+        for line in md_lines:
+            if line is _PAGE_BREAK_MARKER:
+                page_mds.append("\n".join(buf))
+                buf = []
+            else:
+                buf.append(line)
+        page_mds.append("\n".join(buf))
+
+        cleaned = [
+            _postprocess(p, defragment=options.defragment_short,
+                         orphan_max_len=options.orphan_max_len)
+            for p in page_mds
+        ]
+        return "\n---\n\n".join(cleaned)
+
+    # "hidden" or "off": full-document post-processing so cross-page
+    # paragraphs can be merged by the defragmenter.
+    # Replace sentinel objects with unique per-page strings that survive
+    # cleanup, then swap them for <!-- Page N --> afterwards.
+    page_num = 2
+    flat: List[str] = []
     for line in md_lines:
         if line is _PAGE_BREAK_MARKER:
-            page_mds.append("\n".join(buf))
-            buf = []
+            if mode == "hidden":
+                flat.append(f"\x00PAGE{page_num}\x00")
+            # "off" mode: just drop the marker
+            page_num += 1
         else:
-            buf.append(line)
-    page_mds.append("\n".join(buf))  # last page
+            flat.append(line)
 
-    cleaned = [
-        _postprocess(p, defragment=options.defragment_short,
-                     orphan_max_len=options.orphan_max_len)
-        for p in page_mds
-    ]
+    md = _postprocess(
+        "\n".join(flat),
+        defragment=options.defragment_short,
+        orphan_max_len=options.orphan_max_len,
+    )
 
-    sep = "\n---\n\n" if options.insert_page_breaks else "\n"
-    return sep.join(cleaned)
+    if mode == "hidden":
+        for n in range(2, page_num):
+            md = md.replace(f"\x00PAGE{n}\x00", f"<!-- Page {n} -->")
+
+    return md
 
 
 # ---------------------------------------------------------------------------

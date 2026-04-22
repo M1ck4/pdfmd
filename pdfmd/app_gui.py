@@ -1023,7 +1023,7 @@ class PdfMdApp(tk.Tk):
             heading_size_ratio=float(self.heading_ratio_var.get()),
             orphan_max_len=int(self.orphan_len_var.get()),
             remove_headers_footers=self.rm_edges_var.get(),
-            insert_page_breaks=self.page_breaks_var.get(),
+            page_break_mode="visible" if self.page_breaks_var.get() else "off",
             export_images=self.export_images_var.get(),
         )
 

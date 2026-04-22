@@ -784,7 +784,8 @@ pdfmd document.pdf -v --no-color
 
 ```
 usage: pdfmd [-h] [-o OUTPUT] [--ocr {off,auto,tesseract,ocrmypdf}]
-             [--lang LANG] [--export-images] [--page-breaks] [--preview-only]
+             [--lang LANG] [--export-images] [--page-breaks [{visible,hidden}]]
+             [--preview-only]
              [--no-progress] [-q] [-v] [--stats] [--no-color] [--version]
              INPUT_PDF [INPUT_PDF ...]
 
@@ -819,7 +820,10 @@ options:
   --export-images       Export images to _assets/ folder next to output file,
                         with Markdown image references appended to document.
   
-  --page-breaks         Insert '---' horizontal rule between pages in output.
+  --page-breaks [MODE]  Insert page markers between pages (default: visible).
+                        visible — '---' horizontal rule between pages.
+                        hidden  — '<!-- Page N -->' HTML comments (preserves
+                        cross-page paragraph flow; ideal for LLM ingestion).
   
   --preview-only        Only process first 3 pages (useful for quick inspection
                         of large documents or testing settings).
