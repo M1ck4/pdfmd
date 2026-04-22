@@ -113,6 +113,43 @@ def _group_tile_strips(
     return groups
 
 
+def _filter_overlapped(
+    entries: List[Tuple["fitz.Pixmap", "fitz.Rect"]],
+    overlap_threshold: float = 0.5,
+) -> List[int]:
+    """Return indices of images to keep, dropping small images that are
+    significantly overlapped by a larger image.
+
+    An image is dropped when another image's rect covers more than
+    *overlap_threshold* of its area and the other image has a larger area.
+    """
+    keep = set(range(len(entries)))
+    for i in range(len(entries)):
+        if i not in keep:
+            continue
+        ri = entries[i][1]
+        area_i = ri.get_area()
+        if area_i <= 0:
+            continue
+        for j in range(len(entries)):
+            if j == i or j not in keep:
+                continue
+            rj = entries[j][1]
+            area_j = rj.get_area()
+            # Compute intersection
+            ix0 = max(ri.x0, rj.x0)
+            iy0 = max(ri.y0, rj.y0)
+            ix1 = min(ri.x1, rj.x1)
+            iy1 = min(ri.y1, rj.y1)
+            if ix0 >= ix1 or iy0 >= iy1:
+                continue
+            inter = (ix1 - ix0) * (iy1 - iy0)
+            # Drop j if it's smaller and mostly covered by i
+            if area_j < area_i and inter / area_j > overlap_threshold:
+                keep.discard(j)
+    return sorted(keep)
+
+
 def _stitch_vertical(pil_images: List[Image.Image]) -> Image.Image:
     """Stitch PIL Images vertically into a single image."""
     total_w = max(im.width for im in pil_images)
@@ -183,6 +220,15 @@ def _export_images(
 
             if not entries:
                 continue
+
+            # Drop small images that are mostly overlapped by a larger one
+            # (e.g. decorative clip-art layered on top of an illustration)
+            keep_indices = _filter_overlapped(entries)
+            if len(keep_indices) < len(entries):
+                dropped = len(entries) - len(keep_indices)
+                entries = [entries[i] for i in keep_indices]
+                if log_cb:
+                    log_cb(f"[pipeline] Dropped {dropped} overlapped fragment(s) on page {pno + 1}")
 
             groups = _group_tile_strips(entries)
             rels: List[str] = []
