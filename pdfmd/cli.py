@@ -161,14 +161,29 @@ Security notes:
 
     parser.add_argument(
         "--export-images",
-        action="store_true",
-        help="Export images to an _assets/ folder and append Markdown references.",
+        nargs="?",
+        const="white",
+        default=None,
+        choices=["white", "black", "transparent"],
+        help=(
+            "Export images to an _assets/ folder and append Markdown references.\n"
+            "Optional value sets the background for transparent pixels:\n"
+            "  white (default) | black | transparent (keep alpha)."
+        ),
     )
 
     parser.add_argument(
         "--page-breaks",
-        action="store_true",
-        help="Insert '---' page break markers between pages in the output.",
+        nargs="?",
+        const="visible",
+        default=None,
+        choices=["visible", "hidden"],
+        help=(
+            "Insert page markers between pages (default: visible). "
+            "'visible' inserts '---' horizontal rules. "
+            "'hidden' inserts <!-- Page N --> HTML comments "
+            "(preserves cross-page paragraph flow; ideal for LLM ingestion)."
+        ),
     )
 
     parser.add_argument(
@@ -236,8 +251,8 @@ def _make_options(args: argparse.Namespace) -> Options:
     opts.preview_only = bool(args.preview_only)
 
     # Rendering / output
-    opts.insert_page_breaks = bool(args.page_breaks)
-    opts.export_images = bool(args.export_images)
+    opts.page_break_mode = args.page_breaks or "off"
+    opts.export_images = args.export_images or "off"
 
     # Transform heuristics remain at their defaults; they can be exposed later.
     return opts

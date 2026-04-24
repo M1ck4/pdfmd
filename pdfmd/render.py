@@ -103,47 +103,6 @@ def _unwrap_hard_breaks(lines: List[str]) -> str:
     return "\n".join(out)
 
 
-def _defragment_orphans(md: str, max_len: int = 45) -> str:
-    """Merge short, isolated lines back into the previous paragraph.
-
-    This operates on the final Markdown string, post-assembly.
-
-    Heuristic:
-    - If a non-heading line is:
-        * sandwiched between blank lines
-        * short (<= max_len chars)
-        * not already a list item,
-      then we append it to the previous non-blank line.
-    """
-    lines = md.splitlines()
-    res: List[str] = []
-    i = 0
-
-    while i < len(lines):
-        line = lines[i]
-
-        if (
-            i > 0
-            and i < len(lines) - 1
-            and not lines[i - 1].strip()
-            and not lines[i + 1].strip()
-            and 0 < len(line.strip()) <= max_len
-            and not line.strip().startswith("#")
-        ):
-            # Attach orphan to the previous non-blank line
-            j = len(res) - 1
-            while j >= 0 and not res[j].strip():
-                j -= 1
-            if j >= 0:
-                res[j] = (res[j].rstrip() + " " + line.strip()).strip()
-                i += 2
-                continue
-
-        res.append(line)
-        i += 1
-
-    return "\n".join(res)
-
 
 # ---------------------------------------------------------------------------
 # Safe joining & footer detection reuse
@@ -547,26 +506,174 @@ def render_document(
                 )
             )
 
-        if options.insert_page_breaks and i < total - 1:
-            md_lines.extend(["---", ""])  # page rule
+        if i < total - 1:
+            md_lines.append(_PAGE_BREAK_MARKER)
 
         if progress_cb:
             progress_cb(i + 1, total)
 
-    md = "\n".join(md_lines)
-    # Collapse excessive blank lines
-    md = re.sub(r"\n{3,}", "\n\n", md).strip() + "\n"
+    mode = options.page_break_mode
 
-    if options.defragment_short:
-        md = _defragment_orphans(md, max_len=options.orphan_max_len)
+    if mode == "visible":
+        # Per-page post-processing; join with visible "---" separators.
+        page_mds: List[str] = []
+        buf: List[str] = []
+        for line in md_lines:
+            if line is _PAGE_BREAK_MARKER:
+                page_mds.append("\n".join(buf))
+                buf = []
+            else:
+                buf.append(line)
+        page_mds.append("\n".join(buf))
 
-    # Strip common footer artefacts like trailing "- - 1" or "- -" at end of lines
-    md = re.sub(r"\s*-+\s*-+\s*\d*\s*$", "", md, flags=re.MULTILINE)
+        cleaned = [
+            _postprocess(p, defragment=options.defragment_short,
+                         orphan_max_len=options.orphan_max_len)
+            for p in page_mds
+        ]
+        return "\n---\n\n".join(cleaned)
 
-    # Tighten spaces before punctuation
-    md = re.sub(r"\s+([,.;:?!])", r"\1", md)
+    # "hidden" or "off": full-document post-processing so cross-page
+    # paragraphs can be merged by the defragmenter.
+    # Replace sentinel objects with unique per-page strings that survive
+    # cleanup, then swap them for <!-- Page N --> afterwards.
+    page_num = 2
+    flat: List[str] = []
+    for line in md_lines:
+        if line is _PAGE_BREAK_MARKER:
+            if mode == "hidden":
+                flat.append(f"\x00PAGE{page_num}\x00")
+            # "off" mode: just drop the marker
+            page_num += 1
+        else:
+            flat.append(line)
+
+    md = _postprocess(
+        "\n".join(flat),
+        defragment=options.defragment_short,
+        orphan_max_len=options.orphan_max_len,
+    )
+
+    if mode == "hidden":
+        for n in range(2, page_num):
+            md = md.replace(f"\x00PAGE{n}\x00", f"<!-- Page {n} -->")
 
     return md
+
+
+# ---------------------------------------------------------------------------
+#   Post-processing (no regex)
+# ---------------------------------------------------------------------------
+
+_PAGE_BREAK_MARKER = object()  # identity sentinel for splitting pages
+
+
+def _postprocess(
+    md: str,
+    *,
+    defragment: bool = True,
+    orphan_max_len: int = 45,
+) -> str:
+    """Clean up rendered Markdown with simple line-by-line logic."""
+    lines = md.splitlines()
+    out: List[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # --- Collapse blank lines: at most one consecutive blank ---
+        if not stripped:
+            if out and not out[-1].strip():
+                continue  # skip consecutive blank
+            out.append("")
+            continue
+
+        # --- Strip footer artefacts like trailing "- - 1" or "- -" ---
+        # Walk backwards from the end; if we find only dashes, spaces, and
+        # at most one trailing number, strip that suffix.
+        cleaned = _strip_dash_footer(stripped)
+        out.append(cleaned)
+
+    # --- Defragment short orphan lines ---
+    if defragment:
+        out = _defragment_orphans_list(out, max_len=orphan_max_len)
+
+    # --- Tighten spaces before punctuation ---
+    result: List[str] = []
+    for line in out:
+        for ch in ",.;:?!":
+            line = line.replace(f" {ch}", ch)
+        result.append(line)
+
+    return "\n".join(result).strip() + "\n"
+
+
+def _strip_dash_footer(line: str) -> str:
+    """Remove trailing footer artefacts like '- - 1' or '- -' from a line.
+
+    Only strips when the suffix is clearly a footer pattern (dashes separated
+    by spaces, optionally followed by a page number).  Does not touch lines
+    that are *only* dashes (e.g. '---').
+    """
+    # Find the last non-dash, non-space, non-digit character.
+    i = len(line) - 1
+    while i >= 0 and line[i] in "- \t0123456789":
+        i -= 1
+
+    if i < 0:
+        # Entire line is dashes/spaces/digits — not a footer, keep as-is.
+        return line
+
+    suffix = line[i + 1 :]
+    # A footer suffix must contain at least two dashes.
+    dash_count = suffix.count("-")
+    if dash_count >= 2:
+        return line[: i + 1].rstrip()
+
+    return line
+
+
+def _defragment_orphans_list(
+    lines: List[str], max_len: int = 45
+) -> List[str]:
+    """Merge short, isolated lines back into the previous paragraph.
+
+    A line is an orphan if it is:
+      - sandwiched between blank lines
+      - short (<= max_len chars)
+      - not a heading, list item, or page-break sentinel
+    """
+    res: List[str] = []
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+
+        is_orphan = (
+            i > 0
+            and i < n - 1
+            and not lines[i - 1].strip()
+            and not lines[i + 1].strip()
+            and 0 < len(stripped) <= max_len
+            and not stripped.startswith("#")
+        )
+
+        if is_orphan:
+            # Find previous non-blank line in result to attach to.
+            j = len(res) - 1
+            while j >= 0 and not res[j].strip():
+                j -= 1
+            if j >= 0:
+                res[j] = res[j].rstrip() + " " + stripped
+                i += 2  # skip orphan + trailing blank
+                continue
+
+        res.append(line)
+        i += 1
+
+    return res
 
 
 __all__ = [

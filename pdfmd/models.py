@@ -171,8 +171,8 @@ class Options:
     remove_headers_footers: bool = True
 
     # Rendering / output
-    insert_page_breaks: bool = False
-    export_images: bool = False
+    page_break_mode: str = "off"  # "off", "visible", "hidden"
+    export_images: str = "off"  # "off", "white", "black", "transparent"
 
 
 # ------------------------------ Utilities ------------------------------
