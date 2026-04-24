@@ -234,6 +234,31 @@ def _export_images(
                 rect = rects[0] if rects else fitz.Rect(0, len(entries) * 1000, 1, len(entries) * 1000 + 1)
                 entries.append((pix, rect))
 
+            # Also collect inline images embedded in the content stream.
+            # These have xref=0 and are invisible to get_images(), but
+            # appear as type-1 blocks in get_text('dict').  Common in
+            # PowerPoint-exported PDFs.
+            blocks = page.get_text("dict")["blocks"]
+            for blk in blocks:
+                if blk["type"] != 1:
+                    continue
+                try:
+                    pix = _normalize_pixmap(
+                        fitz.Pixmap(blk["image"]), bg=options.export_images
+                    )
+                except Exception:
+                    continue
+                rect = fitz.Rect(blk["bbox"])
+                # Skip if an XObject entry already covers this image
+                dup = False
+                for epix, erect in entries:
+                    if epix.width == pix.width and epix.height == pix.height:
+                        if abs(erect.x0 - rect.x0) < 5 and abs(erect.y0 - rect.y0) < 5:
+                            dup = True
+                            break
+                if not dup:
+                    entries.append((pix, rect))
+
             if not entries:
                 continue
 
